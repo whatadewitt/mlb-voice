@@ -1,0 +1,5 @@
+This is a 1-second silent MP3 file. You can generate one using the following ffmpeg command:
+
+ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 1 -q:a 9 -acodec libmp3lame silence.mp3
+
+Place the generated silence.mp3 in the same directory as server.py.

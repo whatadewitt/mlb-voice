@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HLS Audio Stream</title>
+</head>
+<body>
+    <h1>HLS Audio Stream</h1>
+    <audio id="audio" controls autoplay></audio>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script>
+    if (Hls.isSupported()) {
+        var audio = document.getElementById('audio');
+        var hls = new Hls();
+        hls.loadSource('/hls/playlist.m3u8');
+        hls.attachMedia(audio);
+    } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+        audio.src = '/hls/playlist.m3u8';
+    }
+    </script>
+</body>
+</html>

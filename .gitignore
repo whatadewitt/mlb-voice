@@ -1,0 +1,29 @@
+# Secrets
+.env
+.env.*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Generated / runtime
+hls/
+queue/
+
+# Media
+*.mp3
+*.wav
+
+# Game data (large)
+*.json
+!package.json
+!package-lock.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
