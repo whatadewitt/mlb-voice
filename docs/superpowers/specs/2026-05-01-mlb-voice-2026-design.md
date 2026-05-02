@@ -531,7 +531,7 @@ description: |
   an explosive call.
 
 source:
-  game_json: data/games/SDatTOR.json    # or live MLB API replay endpoint
+  game_json: data/games/<TBD>.json      # user-provided when we curate scenarios
   start_play: 142                        # play index (or timestamp string)
   stop_after_play: 145                   # 3 plays of context + HR + reaction
   speed: 1.0                             # real-time
@@ -574,6 +574,14 @@ The descriptor lets us:
 Each Phase-1 scenario lives in `scenarios/`, version-controlled, with
 the YAML *and* a sibling `<name>.notes.md` capturing why this slice was
 picked, what we expect to hear, and demo-day talking points.
+
+**Source games are user-provided when we reach the curation step
+(Week 3).** When that step is hit, the user will identify three night-before
+games containing the desired moments (a routine stretch with mixed plays,
+a go-ahead HR, a clean inning-end) and supply the GUMBO JSONs. The
+implementation builds the scenario plumbing first against the existing
+2025 sample JSONs as smoke tests, then swaps in the curated games once
+they're delivered.
 
 ### 8.3 Demo-day operations
 
@@ -663,6 +671,8 @@ point at the speakers, and talk.
 
 - Ad content design (products, templates, voice direction, music bed).
   Future content session.
+- Source games for the three Phase-1 demo scenarios (Section 8).
+  User-provided in Week 3.
 - Crowd noise / atmospheric audio. Stretch goal, not in plan.
 - Phase 3 storylines (battery been together all year, manager hot seat,
   rubber game of the series). Next year.
