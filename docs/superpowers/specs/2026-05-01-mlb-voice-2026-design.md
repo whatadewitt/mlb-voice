@@ -72,7 +72,7 @@ four goals above.
 |---|---|
 | 1 | Dia2 migration on RunPod. Voice prefixes recorded/sourced. End-to-end smoke test (existing prompt → Dia2-2B → HLS → audible). Unblocks everything else. |
 | 2 | GameStateService with Statcast + WP/leverage. NarrativeThreadEngine (Phase 1 thread catalogue). ScriptGenerator with new memory subsystem. Smart state injection in place. |
-| 3 | HighlightDetector + two-stage prompting. Pre-generated ad library (script gen + render). Final integration. Demo curation. |
+| 3 | HighlightDetector + two-stage prompting. Pre-generated ad library (script gen + render). The three Phase-1 demo scenarios curated and rehearsed (Section 8). Final integration. |
 
 ### Phase 2 — "Fine-tune cherry on top" (Week 4)
 
@@ -157,10 +157,17 @@ Optional layer, scope-droppable.
 - **Responsibility:** poll MLB Stats API timestamps, walk the timestamp list
   from a chosen starting point, emit GUMBO snapshots.
 - **Inputs:** game ID, starting timestamp, optional speed multiplier (e.g.,
-  2× for compressed-replay dev runs).
+  2× for compressed-replay dev runs), optional `--scenario <name>` flag
+  (Section 8).
 - **Outputs:** raw GUMBO snapshots.
+- **Modes:**
+  - **Replay (default).** As today: walk timestamps from a chosen start until
+    the end of the game (or a Ctrl-C).
+  - **Scenario.** Loads `scenarios/<name>.yaml`, hydrates bootstrap state
+    into GameSummary + NarrativeThreadEngine, walks only the configured
+    play range, then stops cleanly.
 - **Cleanup vs 2025:** factor out from the inline loop in
-  `gameScripting.js`; add the speed multiplier; otherwise unchanged.
+  `gameScripting.js`; add the speed multiplier; add scenario mode.
 
 ### 6.2 GameStateService (Node, `src/gameState/`)
 
@@ -504,9 +511,111 @@ presentation.
 
 ---
 
-## 8. Environment & deployment
+## 8. Demo Scenarios (canned runs)
 
-### 8.1 Dev (local)
+The replay-as-live setup is great for development, but a 9-inning replay is
+too long for a 5-minute demo and too unpredictable to script around. We
+pre-curate **three scenarios** — each a small, deterministic slice that
+targets a specific story we want the demo to tell.
+
+### 8.1 Scenario descriptors
+
+Each scenario is a YAML file at `scenarios/<name>.yaml`:
+
+```yaml
+name: go_ahead_homer
+title: "Go-Ahead Home Run"
+description: |
+  Late-and-close, runner on, trailing team takes the lead with one swing.
+  Demos the HighlightDetector firing holy_shit and the system sustaining
+  an explosive call.
+
+source:
+  game_json: data/games/SDatTOR.json    # or live MLB API replay endpoint
+  start_play: 142                        # play index (or timestamp string)
+  stop_after_play: 145                   # 3 plays of context + HR + reaction
+  speed: 1.0                             # real-time
+
+bootstrap:
+  game_summary: |
+    Bottom 8, Padres trail 4-3. Cease has been dealing all night.
+    Tatis up, Bogaerts on second after a leadoff double.
+  pre_active_threads:
+    - late_and_close
+    - risp_jam
+    - pitcher_dealing
+  pre_touched_storylines: []
+
+demo:
+  expect_classification: holy_shit
+  what_to_listen_for: "Sustained call, S2 disbelief, exit velocity surfaced naturally"
+  expected_runtime_seconds: 45
+```
+
+The descriptor lets us:
+
+- Skip mid-game bootstrap of the GameSummary — it's prefilled.
+- Pre-seed the NarrativeThreadEngine with active threads so the very
+  first call sounds like a real broadcast already in progress, not a cold
+  start.
+- Stop the run cleanly without walking the rest of the game.
+- Document, in version-controlled YAML, exactly what the demo is supposed
+  to show — useful for the dev log and for handing the demo off to a
+  teammate.
+
+### 8.2 Phase 1 scenarios
+
+| Scenario | Story it tells | Runtime |
+|---|---|---|
+| `standard_game` | Routine play-by-play across 4–6 plays in a mid-inning, mid-game stretch. Mix of routine and notable plays. Shows the system staying calm, weaving threads naturally, *not* re-reading the scoreboard every pitch. The "does it sound like a real broadcast?" answer. | ~90s |
+| `go_ahead_homer` | Late-and-close go-ahead HR. Shows HighlightDetector firing `holy_shit`, sustained explosive call, exit velocity / WP swing surfaced naturally, S2 reacting with weight. The "does it know when to lose its mind?" answer. | ~45s |
+| `inning_break_into_ads` | Final out of a half-inning, pre-generated ad kicks in via AdLibrary, broadcast picks back up at top of next half-inning with a refreshed GameSummary recap. The "does it have real broadcast structure?" answer. | ~75s |
+
+Each Phase-1 scenario lives in `scenarios/`, version-controlled, with
+the YAML *and* a sibling `<name>.notes.md` capturing why this slice was
+picked, what we expect to hear, and demo-day talking points.
+
+### 8.3 Demo-day operations
+
+A small wrapper at `scripts/demo.sh` exposes the three scenarios as
+one-keystroke commands:
+
+```bash
+./scripts/demo.sh standard
+./scripts/demo.sh homer
+./scripts/demo.sh ads
+```
+
+Each command:
+
+1. Wipes the HLS queue and pads `playlist.m3u8` with silence so the
+   browser starts from a clean state.
+2. Starts the relevant scenario via `node src/gameTicker.js --scenario <name>`.
+3. Tails the console summary so the operator can see classifications/threads
+   on screen during the demo.
+4. Exits cleanly when the scenario's `stop_after_play` is reached.
+
+Demo day reduces to: open the HLS player URL, run one of three commands,
+point at the speakers, and talk.
+
+### 8.4 Why this is a first-class concept, not a hack
+
+- **Demo predictability.** A live or full-game replay can do anything;
+  scenarios always demo what we want to demo.
+- **Tuning harness.** Each scenario doubles as a regression test for
+  the HighlightDetector thresholds and the cooldown defaults — re-run the
+  same scenario, listen, tweak, re-run. (This is how Week 3 tuning
+  actually happens.)
+- **Hand-off ready.** A teammate can run the demo without knowing the
+  internals.
+- **Dev log gold.** Each scenario's `<name>.notes.md` is exactly the kind
+  of presentation material the dev-log rule is meant to produce.
+
+---
+
+## 9. Environment & deployment
+
+### 9.1 Dev (local)
 
 - Node + Python on the developer's machine.
 - `TTS_BACKEND=openai` — TTS via OpenAI `gpt-4o-mini-tts` stand-in.
@@ -516,7 +625,7 @@ presentation.
 - Runtime `scripts.jsonl` writes to `./logs/<game_id>_<ts>/`.
 - Dev log `docs/dev-log.md` updated as work happens.
 
-### 8.2 Demo (RunPod)
+### 9.2 Demo (RunPod)
 
 - CUDA 12.8+ image, single GPU (≥24GB VRAM is comfortable; ≥12GB is the
   floor).
@@ -529,7 +638,7 @@ presentation.
 - Logs written to `./logs/` and (optionally) tarred + downloaded after the
   demo for the presentation extractor.
 
-### 8.3 Secrets
+### 9.3 Secrets
 
 - `OPENAI_API_KEY` — required.
 - `MLB_STATS_*` — public API, no key needed.
@@ -538,7 +647,7 @@ presentation.
 
 ---
 
-## 9. Risks & open questions
+## 10. Risks & open questions
 
 | Risk | Mitigation |
 |---|---|
@@ -561,7 +670,7 @@ presentation.
 
 ---
 
-## 10. Appendix — file structure (illustrative)
+## 11. Appendix — file structure (illustrative)
 
 ```
 mlb-voice/
@@ -598,9 +707,17 @@ mlb-voice/
 │   ├── scriptGenerator.js
 │   ├── adLibrary.js
 │   └── logger.js
+├── scenarios/
+│   ├── standard_game.yaml
+│   ├── standard_game.notes.md
+│   ├── go_ahead_homer.yaml
+│   ├── go_ahead_homer.notes.md
+│   ├── inning_break_into_ads.yaml
+│   └── inning_break_into_ads.notes.md
 ├── scripts/
 │   ├── genAds.js
-│   └── renderAds.js
+│   ├── renderAds.js
+│   └── demo.sh                              ← one-keystroke scenario runner
 ├── server.py                                ← Flask + Dia2 + HLS
 ├── pyproject.toml                           ← uv-managed Dia2 env
 ├── hls_player.html
