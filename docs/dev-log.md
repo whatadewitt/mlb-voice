@@ -8,7 +8,7 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 ## 2026-05-03 — Project scaffolding
 
 **What changed**
-- Created `src/`, `scripts/`, `scenarios/`, `prefixes/`, `ads/`, `data/games/`, `logs/`.
+- Created `src/`, `scripts/`, `scenarios/`, `prefixes/`, `ads/`, `data/games/`, `data/ad_scripts/`, `logs/`.
 - Updated `.gitignore` to keep runtime artifacts out of git but preserve directory shells via `.gitkeep`.
 
 **Why**
