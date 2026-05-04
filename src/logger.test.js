@@ -35,4 +35,28 @@ describe("Logger", () => {
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it("stage() does not throw when second argument is omitted", () => {
+    const logger = new Logger({ runId: "test-run" });
+    expect(() => logger.stage("foo")).not.toThrow();
+  });
+
+  it("info() handles circular references without throwing", () => {
+    const logger = new Logger({ runId: "test-run" });
+    const obj = {};
+    obj.self = obj;
+    expect(() => logger.info("evt", obj)).not.toThrow();
+    const printed = consoleSpy.mock.calls.flat().join(" ");
+    expect(printed).toContain("[unserializable]");
+  });
+
+  it("error() handles circular references without throwing", () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logger = new Logger({ runId: "test-run" });
+    const obj = {};
+    obj.self = obj;
+    expect(() => logger.error("evt", obj)).not.toThrow();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("[unserializable]"));
+    errSpy.mockRestore();
+  });
 });
