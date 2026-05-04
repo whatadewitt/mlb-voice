@@ -1,0 +1,27 @@
+[project]
+name = "mlb-voice"
+version = "0.2.0"
+description = "MLB Voice 2026 — TTS + HLS service"
+requires-python = ">=3.11"
+dependencies = [
+  "flask>=3.0",
+  "pydub>=0.25",
+  "soundfile>=0.12",
+  "requests>=2.31",
+  "python-dotenv>=1.0",
+  "openai>=1.50",
+  "pybaseball>=2.2",
+]
+
+[project.optional-dependencies]
+dia2 = [
+  # Dia2 wheel via HF; the `nari-labs/dia2` repo's pyproject is the source of truth.
+  # Pinned post-install: `uv pip install dia2 @ git+https://github.com/nari-labs/dia2.git`
+  # (the dia2 package is added in Task 6 once we are on a CUDA-capable host).
+]
+dev = [
+  "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
