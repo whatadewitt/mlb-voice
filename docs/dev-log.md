@@ -5,6 +5,26 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-03 — Dia2 backend wiring (RunPod-only path)
+
+**What changed**
+- Replaced the `tts_dia2` placeholder (`NotImplementedError`) in `server.py` with the real implementation: lazy `_load_dia2()` helper that loads `nari-labs/Dia2-2B` on first call (bfloat16 on CUDA), and a `tts_dia2` function that reads per-`voice_set` prefix WAVs from `prefixes/<voice_set>_s{1,2}.wav` and calls `model.generate` with a `GenerationConfig`.
+- Added `_dia2_model` module-level global for model caching (avoid re-loading across requests).
+- Updated `__main__` block: when `TTS_BACKEND=dia2`, pre-warms the model at startup before Flask starts accepting traffic.
+- Collapsed the verbose multi-line `[project.optional-dependencies] dia2` block in `pyproject.toml` to a single-line form with the pip-install command as a trailing comment.
+- Created `prefixes/README.md` documenting the four required prefix files, their purpose, and legal sourcing rules (no real-broadcaster cloning).
+
+**Why**
+Task 5 left `tts_dia2` as a stub to keep the server importable while the Dia2 wiring was deferred. Task 6 fills it in so the RunPod deployment can run `TTS_BACKEND=dia2` and get real two-speaker conditioned TTS. The lazy-load pattern keeps local/CI imports clean — `dia2` is never imported unless the backend is actually invoked on a CUDA host.
+
+**What I tried and dropped**
+- Attempted `git add prefixes/*.wav` for the four silence-placeholder files: blocked by `.gitignore` (`*.wav` rule covers them). Resolution: leave the placeholders untracked per their stated purpose ("verify code paths only; replace before demo"). The `prefixes/.gitkeep` + `prefixes/README.md` already keep the directory and its intent in git. No `.gitignore` changes were made — that's a plan-level decision.
+
+**Demo / presentation hooks**
+- "On RunPod: set `TTS_BACKEND=dia2` and the server pre-warms Dia2-2B at startup, then every `/generate` call produces genuine two-voice conditioned speech — the prefix files give us consistent broadcaster and ad personalities across the whole broadcast."
+
+---
+
 ## 2026-05-03 — server.py rewrite with backend selector
 
 **What changed**

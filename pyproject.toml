@@ -14,11 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dia2 = [
-  # Dia2 wheel via HF; the `nari-labs/dia2` repo's pyproject is the source of truth.
-  # Pinned post-install: `uv pip install dia2 @ git+https://github.com/nari-labs/dia2.git`
-  # (the dia2 package is added in Task 6 once we are on a CUDA-capable host).
-]
+dia2 = []  # install separately on CUDA host: `uv pip install "dia2 @ git+https://github.com/nari-labs/dia2"`
 dev = [
   "pytest>=8.3",
 ]

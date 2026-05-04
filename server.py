@@ -44,8 +44,31 @@ def tts_openai(text: str, voice_set: str, out_path: str) -> None:
     ) as resp:
         resp.stream_to_file(out_path)
 
+_dia2_model = None
+
+def _load_dia2():
+    global _dia2_model
+    if _dia2_model is not None:
+        return _dia2_model
+    from dia2 import Dia2
+    _dia2_model = Dia2.from_repo("nari-labs/Dia2-2B", device="cuda", dtype="bfloat16")
+    return _dia2_model
+
 def tts_dia2(text: str, voice_set: str, out_path: str) -> None:
-    raise NotImplementedError("Dia2 backend wired in Task 6")
+    from dia2 import GenerationConfig, SamplingConfig
+    model = _load_dia2()
+    s1 = os.path.join(PREFIX_DIR, f"{voice_set}_s1.wav")
+    s2 = os.path.join(PREFIX_DIR, f"{voice_set}_s2.wav")
+    if not (os.path.isfile(s1) and os.path.isfile(s2)):
+        raise FileNotFoundError(f"voice prefixes missing for set={voice_set}: {s1}, {s2}")
+    config = GenerationConfig(
+        cfg_scale=2.0,
+        audio=SamplingConfig(temperature=0.8, top_k=50),
+        use_cuda_graph=True,
+        prefix_speaker_1=s1,
+        prefix_speaker_2=s2,
+    )
+    model.generate(text, config=config, output_wav=out_path, verbose=True)
 
 TTS_BACKENDS = {"stub": tts_stub, "openai": tts_openai, "dia2": tts_dia2}
 
@@ -174,4 +197,8 @@ def statcast():
 
 if __name__ == "__main__":
     print(f"TTS backend: {TTS_BACKEND}")
+    if TTS_BACKEND == "dia2":
+        print("⏳ Loading Dia2-2B (one-time)...")
+        _load_dia2()
+        print("✅ Dia2 ready.")
     app.run(host="0.0.0.0", port=5025, threaded=True, debug=False)
