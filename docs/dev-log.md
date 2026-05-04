@@ -5,6 +5,23 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-03 — Logger module
+
+**What changed**
+- Created `src/logger.js` exporting a `Logger` class with three methods: `stage`, `info`, and `error`.
+- `stage(name, { input, output, latency_ms })` logs a structured one-liner with the stage name, latency, and a compact summary of the output object (up to 3 keys, values truncated at 30 chars).
+- `info(event, data)` logs a JSON-serialized key/value line for general lifecycle events.
+- `error(event, data)` routes to `console.error` for any failure events.
+- Created `src/logger.test.js` with 3 vitest tests (TDD: tests written and confirmed failing before implementation).
+
+**Why**
+Every pipeline stage — HighlightDetector, ScriptGenerator, TTS dispatch — needs a consistent way to record timing and output summaries. A single `Logger` instance per run (keyed on `runId`) makes those structured lines trivially greppable in `logs/` and easy to demo during judging ("look at this single-line trace for a full play classification + script generation cycle").
+
+**Demo / presentation hooks**
+- "Every pipeline stage emits a one-liner: run ID, stage name, latency in ms, and the key output fields — the whole broadcast flow is a single `grep <runId> logs/*.log`."
+
+---
+
 ## 2026-05-03 — Python env via uv
 
 **What changed**
