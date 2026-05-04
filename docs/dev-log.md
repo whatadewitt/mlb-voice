@@ -5,6 +5,20 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-03 — Dia2 hardening
+
+**What changed**
+- `tts_dia2`: moved the two prefix-file `isfile` checks to run before `_load_dia2()` and before the `from dia2 import` line; split the combined check into two separate checks, each raising `FileNotFoundError` naming only the single missing path.
+- `_load_dia2`: added a module-level `_dia2_lock = threading.Lock()` and wrapped the model instantiation in a double-checked lock — outer check before acquiring the lock (fast path), inner check after acquiring it (safe path) — so concurrent first-time `/generate` requests cannot race and double-load the model.
+
+**Why**
+Code review surfaced that loading a 10 GB model before validating cheap on-disk prereqs wastes ~30s and burns VRAM only to fail with a file-not-found error. On Flask's `threaded=True` server, two concurrent cold-start requests could both observe `_dia2_model is None`, both call `Dia2.from_repo`, and OOM the GPU.
+
+**Demo / presentation hooks**
+- "Failure modes are now boring — no mystery OOMs during the live demo."
+
+---
+
 ## 2026-05-03 — Dia2 backend wiring (RunPod-only path)
 
 **What changed**
