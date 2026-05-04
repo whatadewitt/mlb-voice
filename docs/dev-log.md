@@ -5,6 +5,23 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-03 — server.py rewrite with backend selector
+
+**What changed**
+- Replaced `server.py` with a full rewrite: single-file Flask app with a pluggable TTS backend selector (`TTS_BACKEND` env var, defaults to `stub`).
+- Added `tts_stub` (copies `silence.wav`), `tts_openai` (GPT-4o-mini-tts), and `tts_dia2` (raises `NotImplementedError`, wired in Task 6).
+- New endpoints: `/health` (returns backend name, queue depth, HLS thread status), `/enqueue_ad` (copies a pre-rendered WAV from `ads/` into the queue), `/statcast` (501 stub for Task 18).
+- HLS segmenter refactored: silence segments now use the `_silence` filename marker (substring check in `update_playlist`) instead of a brittle separate path; graceful shutdown via `_shutdown` threading event.
+- Deleted dead 2025 files: `server2.py`, `server3.py`, `app.py`, `socket.js`.
+
+**Why**
+The 2025 server was a single tightly-coupled file with Dia2 hard-wired and no way to test HTTP plumbing without a GPU. The backend selector lets CI and local development run end-to-end with `TTS_BACKEND=stub` while the same code paths work with `openai` or `dia2` in production. `/health` and `/enqueue_ad` were missing entirely.
+
+**Demo / presentation hooks**
+- "Single source of truth for TTS+HLS: one env var switches the voice engine from silence stub to OpenAI to Dia2, so we can demo the full broadcast pipeline without GPU hardware on stage."
+
+---
+
 ## 2026-05-03 — Logger hardening
 
 **What changed**
