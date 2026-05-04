@@ -27,3 +27,9 @@ queue/
 .DS_Store
 .vscode/
 .idea/
+
+# Runtime artifacts (in addition to existing rules)
+logs/
+ads/*.wav
+data/games/*.json
+prefixes/*.wav
