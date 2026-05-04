@@ -6,8 +6,13 @@
     "openai": "^4.103.0",
     "ws": "^8.18.2"
   },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  },
   "type": "module",
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
     "hydrate": "GAME=Dummy node game.js",
     "play:SDatTOR": "GAME=SDatTOR node game.js",
     "play:ATLatWAS": "GAME=ATLatWAS node game.js",

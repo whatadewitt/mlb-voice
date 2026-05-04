@@ -5,6 +5,21 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-03 — Node test framework (vitest)
+
+**What changed**
+- Added `vitest` as devDependency.
+- Added `npm test` and `npm run test:watch` scripts.
+- Created `vitest.config.js` and a smoke test at `tests/smoke.test.js`.
+
+**Why**
+The 2025 codebase had no test framework. Phase 1 ships several pure-functional components (calculators, classifiers, thread predicates) that are TDD-friendly; vitest is fast, ESM-native, and matches the project's existing module style.
+
+**Demo / presentation hooks**
+- "We added test infrastructure first because we knew the deterministic components — HighlightDetector, threads, memory — would be the spine of the broadcast quality."
+
+---
+
 ## 2026-05-03 — Project scaffolding
 
 **What changed**
