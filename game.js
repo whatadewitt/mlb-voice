@@ -174,4 +174,4 @@ async function go() {
   await buildScript(gameData).then(sendToVoiceServer);
 }
 
-// go(gameData);
+go(gameData);
