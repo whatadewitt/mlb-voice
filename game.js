@@ -154,7 +154,7 @@ export async function sendToVoiceServer(script) {
   console.log("Post to Voice Server...");
 
   try {
-    await fetch(process.env.VOICE_URL, {
+    await fetch(process.env.VOICE_URL || "http://localhost:5025/generate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

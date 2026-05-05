@@ -5,6 +5,24 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-05 — End-to-end smoke test passing
+
+**What changed**
+- Added `scripts/smoke_e2e.sh` for one-command end-to-end run.
+- Verified pipeline: `gameScripting.js` → `game.js` (existing 2025 prompt) → `/generate` → HLS → browser.
+- Confirmed laptop path with `TTS_BACKEND=openai` produces audible output.
+
+**RunPod (Dia2) variant**
+- Container: `pytorch/pytorch:2.4.0-cuda12.8-cudnn9-devel`.
+- Startup: `curl -LsSf https://astral.sh/uv/install.sh | sh && uv sync --extra dev && uv pip install "dia2 @ git+https://github.com/nari-labs/dia2"`.
+- Run: `TTS_BACKEND=dia2 uv run python server.py`.
+- First call: ~30s download/warmup. Subsequent calls: ~2–3s/segment.
+
+**Demo / presentation hooks**
+- Side-by-side audio: 2025 Dia 1.6B clip vs 2026 Dia2-2B clip from the *same* prompt. Voice stability difference is the whole pitch.
+
+---
+
 ## 2026-05-03 — Dia2 hardening
 
 **What changed**
