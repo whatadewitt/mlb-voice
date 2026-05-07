@@ -15,7 +15,6 @@ HLS_DIR = "hls"
 ADS_DIR = "ads"
 PREFIX_DIR = "prefixes"
 LOG_DIR = "logs"
-SILENCE_WAV = "silence.wav"
 SEGMENT_TIME = 2
 PLAYLIST_WINDOW = 15
 DELETE_DELAY = 2
@@ -148,6 +147,12 @@ _shutdown = threading.Event()
 
 def hls_segmenter_loop():
     log.info("segmenter started")
+    for f in glob.glob(os.path.join(HLS_DIR, "*.ts")):
+        try: os.remove(f)
+        except OSError: pass
+    if os.path.exists(playlist_path):
+        try: os.remove(playlist_path)
+        except OSError: pass
     segment_files, seq, delete_queue = [], 0, []
     pending_audio = []
     n_exposed = 0
@@ -171,7 +176,9 @@ def hls_segmenter_loop():
                 silence_name = f"seg-{seq}_silence.ts"
                 silence_path = os.path.join(HLS_DIR, silence_name)
                 subprocess.run([
-                    "ffmpeg", "-y", "-i", SILENCE_WAV, "-t", str(SEGMENT_TIME),
+                    "ffmpeg", "-y",
+                    "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=24000",
+                    "-t", str(SEGMENT_TIME),
                     "-c:a", "aac", "-b:a", "128k", "-f", "mpegts", silence_path,
                 ], check=True)
                 segment_files.append(silence_path); seq += 1
