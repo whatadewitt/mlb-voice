@@ -5,6 +5,45 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-07 — Silence drift + stale-segment cleanup
+
+**What changed**
+- Replaced the silence-segment ffmpeg input from `silence.wav` (1.0s @ 44.1kHz mono PCM) with `anullsrc=channel_layout=mono:sample_rate=24000` generated inline. Output is now ~1.96s of AAC mpegts in a slot the playlist tags as 2.0s. Sample rate matches the OpenAI TTS output (24kHz), so the player crosses silence↔audio discontinuities without resampling.
+- Dropped the unused `SILENCE_WAV` constant. The `silence.wav` file is no longer referenced by `server.py` (left in repo for now).
+- Added a startup wipe of `hls/*.ts` and `hls/playlist.m3u8` at the top of `hls_segmenter_loop`, so a fresh server boot starts on a clean slate.
+
+**Why**
+Pre-fix, every silence segment was 0.77s of audio in a 2.0s playlist slot — a >1.2s drift per segment. Hadn't visibly bitten the smoke test because the player kept up during the silence-only opening, but it would compound over longer broadcasts and at every silence↔audio discontinuity (ad inserts in Phase 2 will hit this constantly). The mismatched sample rate (44.1kHz silence vs 24kHz OpenAI audio) was a separate latent quality issue at the discontinuity boundary; anullsrc fixes both at once.
+
+The stale-`hls/` cleanup was incidental: we kept tripping over `seg-402_silence.ts`-style files from days-old runs. The segmenter's slide-window cleanup only tracks segments produced by the *current* run, so cross-run leaks were guaranteed.
+
+**Demo / presentation hooks**
+- "All silence is generated inline at the broadcast's sample rate — no fixture-file dependency, no drift, clean transitions across the discontinuity."
+
+---
+
+## 2026-05-07 — HLS streaming pipeline fixes
+
+**What changed**
+Three interlocking bugs in `server.py` were preventing the 2025 broadcast from playing end-to-end through the new HLS pipeline. Fixed together because each fix exposed the next:
+
+1. **`/generate` write race.** `tts_openai`'s `stream_to_file()` streams bytes into `queue/play-*.wav` over 10–30s while the segmenter polls `queue/` every 2s. The segmenter would pick up a partial wav, segment 1–2s of audio from it, then `os.remove()` the still-being-written file — orphaning the rest of the stream into a deleted inode (POSIX keeps the inode alive for the writer's open handle, so the writes silently went nowhere). Fix: write to `*.wav.part`, atomic-rename to `.wav` only after `run_tts` returns.
+2. **Burst exposure at the playlist boundary.** `segment_wav_to_hls` produced ~22 audio segs in one iter; the old loop extended all of them into `segment_files` at once. The sliding window (15) showed the burst's tail and dropped its head in the same playlist update; `MEDIA-SEQUENCE` jumped by ~7, hls.js re-synced to live edge, and the early audio was abandoned. Fix: pre-render into a `pending_audio` FIFO, expose one seg per iter (matching real-time playback).
+3. **`MEDIA-SEQUENCE` going backwards.** With paced exposure, `segment_wav_to_hls` still bumped `seq` by 24 while only one of those segs entered `segment_files` per iter. The old `media_seq = max(0, seq - len(window))` made the playlist's media-sequence *decrease* on subsequent pops, which hls.js treats as a different stream and re-syncs. Fix: track `n_exposed` (total segs ever exposed) separately from `seq` (next file id); compute `media_seq` from `n_exposed`.
+
+Also added structured logging (`logs/server.log`) for `/generate` and the segmenter loop, and wrapped the segmenter loop body in `try/except` so an ffmpeg failure no longer silently kills the daemon thread.
+
+**Why**
+The smoke test (Task 7) was producing audible output but cutting off mid-sentence ("Welcome back folks" then silence). The cutoff was each of the three bugs in turn, peeled one layer at a time: fixing the race exposed the burst, fixing the burst exposed the media-seq inversion. Together they gate any non-trivial broadcast.
+
+**What I tried and dropped**
+- Initial hypothesis was OpenAI TTS truncation. The diagnostic logging refuted it: the wav was being delivered fully (~2 MB, ~40s), but the segmenter was deleting it mid-stream. That's also why the wav header reports `dur=89478.49s` in the logs — OpenAI writes a placeholder `data` chunk size for streaming responses and never backpatches it, so `wave.open` divides the placeholder by the sample rate. ffmpeg is tolerant of the bad header (reads to real EOF); the `wave` module isn't.
+
+**Demo / presentation hooks**
+- "Live HLS is full of footguns — producer-side races, consumer-side sliding-window semantics, and the player silently fails-soft on either. We instrumented the pipeline so the next time it breaks, the logs tell you which layer."
+
+---
+
 ## 2026-05-05 — End-to-end smoke test passing
 
 **What changed**
