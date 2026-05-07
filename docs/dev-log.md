@@ -5,6 +5,27 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-07 — Default TTS backend = Dia2; prefix WAVs now optional
+
+**What changed**
+- `TTS_BACKEND` env default flipped from `"stub"` to `"dia2"` (`server.py`); `scripts/smoke_e2e.sh` first-arg default flipped from `"openai"` to `"dia2"`. Zero-exceptions TTS policy: every audible run goes through Dia2 unless you explicitly pass another backend.
+- `tts_dia2`: prefix WAVs (`prefixes/<voice_set>_s{1,2}.wav`) are now optional. The function uses them as voice conditioning *if* both files exist *and* both are at least `DIA2_MIN_PREFIX_SECONDS` (2.0s) long — that filters out the 1-second silence stubs from Task 6. When omitted, `torch.manual_seed(DIA2_SEED=0)` is set before `model.generate` so Dia2's two synthesized voices are stable across runs and across `[S1]`/`[S2]` calls.
+- `_load_dia2`: device auto-detect (`cuda → mps → cpu`); `use_cuda_graph` is now `torch.cuda.is_available()` rather than hard-coded `True`. Logs `loading Dia2-2B device=… dtype=…` at first cold start so the chosen device is discoverable.
+- `pyproject.toml`: tightened the `dia2` optional-extra comment to spell out the upstream packaging bug — `[tool.setuptools] packages = ["dia2"]` ships only top-level `.py` files, dropping `dia2.core` / `dia2.audio` / `dia2.runtime` subpackages from the wheel. Workaround documented inline.
+
+**Why**
+The single-voice symptom in our Dia2 smoke tests turned out to be the silent prefix WAVs collapsing both speakers into a default voice — the model treats a 1-second silence as conditioning and generates whatever it would without it, but for both speakers, hence one voice. Making prefixes optional (with a fixed seed for stability) gives us the canonical two-voice [S1]/[S2] behavior immediately and lets us swap in real prefix audio later without code changes.
+
+The default-backend flip enforces the policy at the smoke-test level: anyone running `./scripts/smoke_e2e.sh` with no args gets the Dia2 path, and falling back to OpenAI is now an explicit `./scripts/smoke_e2e.sh openai` — a deliberate flag, not the implicit default.
+
+**What I tried and dropped**
+- A local install of `dia2` on Mac to verify the optional-prefix code path. The `pip install` succeeded but the resulting `dia2/__init__.py` failed at import time on `from .core.model import Dia2Model` because the upstream `[tool.setuptools] packages = ["dia2"]` declaration doesn't recurse into subpackages. Confirmed by listing both the installed package contents and the upstream repo's `dia2/` tree via the GitHub API. Combined with the upstream package being explicitly framed as "Dia2 CUDA-only" in its own description, the right answer was to stop trying to run Dia2 on Mac — RunPod is the canonical host.
+
+**Demo / presentation hooks**
+- "Two distinct broadcaster voices come for free from Dia2's `[S1]`/`[S2]` handling — we pin them with a fixed seed so the same script renders identically across runs, which is the foundation of A/B comparing model outputs and fine-tune candidates."
+
+---
+
 ## 2026-05-07 — Silence drift + stale-segment cleanup
 
 **What changed**

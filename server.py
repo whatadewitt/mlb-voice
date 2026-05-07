@@ -19,7 +19,7 @@ SEGMENT_TIME = 2
 PLAYLIST_WINDOW = 15
 DELETE_DELAY = 2
 
-TTS_BACKEND = os.environ.get("TTS_BACKEND", "stub").lower()
+TTS_BACKEND = os.environ.get("TTS_BACKEND", "dia2").lower()
 
 Path(QUEUE_DIR).mkdir(exist_ok=True)
 Path(HLS_DIR).mkdir(exist_ok=True)
@@ -77,6 +77,16 @@ def tts_openai(text: str, voice_set: str, out_path: str) -> None:
 
 _dia2_model = None
 _dia2_lock = threading.Lock()
+DIA2_SEED = 0
+DIA2_MIN_PREFIX_SECONDS = 2.0
+
+def _dia2_device_dtype():
+    import torch
+    if torch.cuda.is_available():
+        return "cuda", "bfloat16"
+    if torch.backends.mps.is_available():
+        return "mps", "float32"
+    return "cpu", "float32"
 
 def _load_dia2():
     global _dia2_model
@@ -85,26 +95,33 @@ def _load_dia2():
     with _dia2_lock:
         if _dia2_model is None:
             from dia2 import Dia2
-            _dia2_model = Dia2.from_repo("nari-labs/Dia2-2B", device="cuda", dtype="bfloat16")
+            device, dtype = _dia2_device_dtype()
+            log.info(f"loading Dia2-2B device={device} dtype={dtype}")
+            _dia2_model = Dia2.from_repo("nari-labs/Dia2-2B", device=device, dtype=dtype)
     return _dia2_model
 
 def tts_dia2(text: str, voice_set: str, out_path: str) -> None:
+    from dia2 import GenerationConfig, SamplingConfig
+    import torch
     s1 = os.path.join(PREFIX_DIR, f"{voice_set}_s1.wav")
     s2 = os.path.join(PREFIX_DIR, f"{voice_set}_s2.wav")
-    if not os.path.isfile(s1):
-        raise FileNotFoundError(f"voice prefix missing: {s1}")
-    if not os.path.isfile(s2):
-        raise FileNotFoundError(f"voice prefix missing: {s2}")
-    from dia2 import GenerationConfig, SamplingConfig
+    use_prefix = (
+        os.path.isfile(s1) and os.path.isfile(s2)
+        and _wav_seconds(s1) >= DIA2_MIN_PREFIX_SECONDS
+        and _wav_seconds(s2) >= DIA2_MIN_PREFIX_SECONDS
+    )
     model = _load_dia2()
-    config = GenerationConfig(
+    torch.manual_seed(DIA2_SEED)
+    cfg_kwargs = dict(
         cfg_scale=2.0,
         audio=SamplingConfig(temperature=0.8, top_k=50),
-        use_cuda_graph=True,
-        prefix_speaker_1=s1,
-        prefix_speaker_2=s2,
+        use_cuda_graph=torch.cuda.is_available(),
     )
-    model.generate(text, config=config, output_wav=out_path, verbose=True)
+    if use_prefix:
+        cfg_kwargs["prefix_speaker_1"] = s1
+        cfg_kwargs["prefix_speaker_2"] = s2
+    log.info(f"tts_dia2 voice_set={voice_set} use_prefix={use_prefix} seed={DIA2_SEED}")
+    model.generate(text, config=GenerationConfig(**cfg_kwargs), output_wav=out_path, verbose=True)
 
 TTS_BACKENDS = {"stub": tts_stub, "openai": tts_openai, "dia2": tts_dia2}
 

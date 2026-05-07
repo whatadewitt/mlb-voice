@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BACKEND="${1:-openai}"  # default to openai for laptop dev; pass "dia2" on RunPod
+BACKEND="${1:-dia2}"  # default to dia2 (zero-exceptions TTS policy); "openai"/"stub" as fallback
 
 echo "→ Starting TTS server (backend=$BACKEND)..."
 TTS_BACKEND="$BACKEND" uv run python server.py &

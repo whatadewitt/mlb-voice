@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dia2 = []  # install separately on CUDA host: `uv pip install "dia2 @ git+https://github.com/nari-labs/dia2"`
+dia2 = []  # CUDA-only. Install on the RunPod host: `uv pip install "dia2 @ git+https://github.com/nari-labs/dia2"`. Note: upstream pyproject pins `packages = ["dia2"]` (no recursion), which drops the dia2.core / dia2.audio / dia2.runtime subpackages from the wheel — you must clone the repo, replace that line with a `[tool.setuptools.packages.find]` block, then `uv pip install --force-reinstall <local-path>`. Don't try Mac: dia2 has no MPS/CPU path.
 dev = [
   "pytest>=8.3",
 ]
