@@ -3,7 +3,9 @@ import time
 import shutil
 import subprocess
 import glob
+import logging
 import threading
+import wave
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, Response, request, jsonify, send_from_directory
@@ -12,6 +14,7 @@ QUEUE_DIR = "queue"
 HLS_DIR = "hls"
 ADS_DIR = "ads"
 PREFIX_DIR = "prefixes"
+LOG_DIR = "logs"
 SILENCE_WAV = "silence.wav"
 SEGMENT_TIME = 2
 PLAYLIST_WINDOW = 15
@@ -23,6 +26,35 @@ Path(QUEUE_DIR).mkdir(exist_ok=True)
 Path(HLS_DIR).mkdir(exist_ok=True)
 Path(ADS_DIR).mkdir(exist_ok=True)
 Path(PREFIX_DIR).mkdir(exist_ok=True)
+Path(LOG_DIR).mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(LOG_DIR, "server.log")),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger("server")
+
+def _wav_seconds(path):
+    try:
+        with wave.open(path, "rb") as w:
+            return w.getnframes() / float(w.getframerate())
+    except Exception:
+        return -1.0
+
+def _ts_seconds(path):
+    try:
+        out = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            timeout=5,
+        ).decode().strip()
+        return float(out)
+    except Exception:
+        return -1.0
 
 app = Flask(__name__)
 hls_thread = None
@@ -115,31 +147,47 @@ def segment_wav_to_hls(wav_path, seq):
 _shutdown = threading.Event()
 
 def hls_segmenter_loop():
+    log.info("segmenter started")
     segment_files, seq, delete_queue = [], 0, []
+    pending_audio = []
+    n_exposed = 0
     while not _shutdown.is_set():
-        files = sorted(f for f in os.listdir(QUEUE_DIR) if f.endswith(".wav"))
-        if files:
-            wav_path = os.path.join(QUEUE_DIR, files[0])
-            segs, seq = segment_wav_to_hls(wav_path, seq)
-            segment_files.extend(segs)
-            os.remove(wav_path)
-        else:
-            silence_name = f"seg-{seq}_silence.ts"
-            silence_path = os.path.join(HLS_DIR, silence_name)
-            subprocess.run([
-                "ffmpeg", "-y", "-i", SILENCE_WAV, "-t", str(SEGMENT_TIME),
-                "-c:a", "aac", "-b:a", "128k", "-f", "mpegts", silence_path,
-            ], check=True)
-            segment_files.append(silence_path); seq += 1
-        update_playlist(segment_files[-PLAYLIST_WINDOW:], max(0, seq - len(segment_files[-PLAYLIST_WINDOW:])))
-        delete_queue.append(segment_files[-(PLAYLIST_WINDOW+1):-PLAYLIST_WINDOW] if len(segment_files) > PLAYLIST_WINDOW else [])
-        if len(delete_queue) > DELETE_DELAY:
-            for seg in delete_queue.pop(0):
-                if seg and os.path.exists(seg):
-                    try: os.remove(seg)
-                    except OSError: pass
-        segment_files = segment_files[-(PLAYLIST_WINDOW+DELETE_DELAY):]
-        time.sleep(SEGMENT_TIME)
+        try:
+            if not pending_audio:
+                files = sorted(f for f in os.listdir(QUEUE_DIR) if f.endswith(".wav"))
+                if files:
+                    wav_path = os.path.join(QUEUE_DIR, files[0])
+                    wav_size = os.path.getsize(wav_path)
+                    wav_dur = _wav_seconds(wav_path)
+                    log.info(f"segmenter wav_in path={wav_path} bytes={wav_size} dur={wav_dur:.2f}s")
+                    segs, seq = segment_wav_to_hls(wav_path, seq)
+                    seg_durs = [_ts_seconds(s) for s in segs]
+                    log.info(f"segmenter wav_segged count={len(segs)} total_dur={sum(seg_durs):.2f}s seg_durs={[round(d,2) for d in seg_durs]}")
+                    pending_audio.extend(segs)
+                    os.remove(wav_path)
+            if pending_audio:
+                segment_files.append(pending_audio.pop(0))
+            else:
+                silence_name = f"seg-{seq}_silence.ts"
+                silence_path = os.path.join(HLS_DIR, silence_name)
+                subprocess.run([
+                    "ffmpeg", "-y", "-i", SILENCE_WAV, "-t", str(SEGMENT_TIME),
+                    "-c:a", "aac", "-b:a", "128k", "-f", "mpegts", silence_path,
+                ], check=True)
+                segment_files.append(silence_path); seq += 1
+            n_exposed += 1
+            update_playlist(segment_files[-PLAYLIST_WINDOW:], max(0, n_exposed - len(segment_files[-PLAYLIST_WINDOW:])))
+            delete_queue.append(segment_files[-(PLAYLIST_WINDOW+1):-PLAYLIST_WINDOW] if len(segment_files) > PLAYLIST_WINDOW else [])
+            if len(delete_queue) > DELETE_DELAY:
+                for seg in delete_queue.pop(0):
+                    if seg and os.path.exists(seg):
+                        try: os.remove(seg)
+                        except OSError: pass
+            segment_files = segment_files[-(PLAYLIST_WINDOW+DELETE_DELAY):]
+            time.sleep(SEGMENT_TIME)
+        except Exception:
+            log.exception("segmenter iter failed")
+            time.sleep(1)
 
 # ---------- Routes ----------
 
@@ -180,7 +228,20 @@ def generate():
         return jsonify({"error": "hls not running"}), 500
     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
     out_path = os.path.join(QUEUE_DIR, f"play-{ts}.wav")
-    run_tts(text, voice_set, out_path)
+    tmp_path = out_path + ".part"
+    log.info(f"/generate begin text_len={len(text)} voice={voice_set} backend={TTS_BACKEND}")
+    t0 = time.time()
+    try:
+        run_tts(text, voice_set, tmp_path)
+    except Exception:
+        log.exception("/generate run_tts failed")
+        try: os.remove(tmp_path)
+        except OSError: pass
+        return jsonify({"error": "tts_failed"}), 500
+    os.rename(tmp_path, out_path)
+    size = os.path.getsize(out_path)
+    dur = _wav_seconds(out_path)
+    log.info(f"/generate ok wav={out_path} bytes={size} dur={dur:.2f}s elapsed={time.time()-t0:.2f}s")
     return jsonify({"status": "queued", "file": out_path})
 
 @app.route("/enqueue_ad", methods=["POST"])
