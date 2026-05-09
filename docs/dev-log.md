@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — GameStateService composition (Task 11)
+
+Created `src/gameState/index.js` (`GameStateService`) — the stateful composer that wires together Tasks 8–10 into a single `enrich(gumbo)` call. Holds `priorSnapshot` (passed to `gumboNormalizer.normalize`) and `priorWP` across calls; computes `win_probability` and `leverage_index` via the Task 9 pure functions; resolves `wp_swing_from_prior` as `Math.abs(current - prior)` (0 on the first call); and fires concurrent `statcast.batterSeason` / `pitcherSeason` fetches, attaching results to `batter.season_stats` / `pitcher.season_stats` when non-null. This finishes the Phase 1 Week 2 gameState block — `gameScripting.js` (Task 12+) will hold one instance and call `enrich` per tick. 2 new tests added; full suite is now 23/23.
+
+---
+
 ## 2026-05-09 — StatcastClient + /statcast endpoint (Task 10)
 
 Added `src/gameState/statcastClient.js` (`StatcastClient`) — a thin HTTP client that POSTs to the TTS server's `/statcast` endpoint and caches results in-process with a 24h TTL keyed by `kind:params`. Returns `null` (never throws) on any network or server error so callers degrade gracefully. Replaced the 501-returning stub in `server.py` with a real implementation wrapping `pybaseball.batting_stats` / `pitching_stats`; a `_scrub()` helper strips pandas NaNs and numpy scalar types before JSON serialization. Not yet wired into `GameStateService` — that's Task 11. 3 new Node tests, all green; total suite 21/21.
