@@ -12,6 +12,7 @@ export function normalize(gumbo, { priorSnapshot } = {}) {
   const { linescore, plays } = liveData;
   const currentPlay = plays.currentPlay;
   const events = currentPlay.playEvents || [];
+  // No events yet (pre-pitch); event-derived fields (pitch/hit) will be null.
   const currentEvent = events.length ? events[events.length - 1] : {};
 
   const half = currentPlay.about.halfInning === "top" ? "top" : "bottom";
@@ -72,10 +73,12 @@ export function normalize(gumbo, { priorSnapshot } = {}) {
   const is_state_change = {
     half_inning: !!priorSnapshot && priorSnapshot.half !== half,
     inning: !!priorSnapshot && priorSnapshot.inning !== inning,
-    score:
-      !!priorSnapshot &&
+    score: !!(
+      priorSnapshot &&
       priorSnapshot.score &&
-      (priorSnapshot.score.home !== score.home || priorSnapshot.score.away !== score.away),
+      (priorSnapshot.score.home !== score.home ||
+        priorSnapshot.score.away !== score.away)
+    ),
     outs: !!priorSnapshot && priorSnapshot.outs !== outs,
   };
 
