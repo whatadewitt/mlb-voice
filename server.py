@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import shutil
 import subprocess
@@ -9,6 +10,9 @@ import wave
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, Response, request, jsonify, send_from_directory
+
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
 
 QUEUE_DIR = "queue"
 HLS_DIR = "hls"
