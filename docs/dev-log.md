@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — StatcastClient + /statcast endpoint (Task 10)
+
+Added `src/gameState/statcastClient.js` (`StatcastClient`) — a thin HTTP client that POSTs to the TTS server's `/statcast` endpoint and caches results in-process with a 24h TTL keyed by `kind:params`. Returns `null` (never throws) on any network or server error so callers degrade gracefully. Replaced the 501-returning stub in `server.py` with a real implementation wrapping `pybaseball.batting_stats` / `pitching_stats`; a `_scrub()` helper strips pandas NaNs and numpy scalar types before JSON serialization. Not yet wired into `GameStateService` — that's Task 11. 3 new Node tests, all green; total suite 21/21.
+
+---
+
 ## 2026-05-09 — WinProbability and LeverageIndex calculators (Task 9)
 
 Added `src/gameState/winProbability.js` (`winProbability()`) and `src/gameState/leverage.js` (`leverageIndex()`). Both are pure functions; Phase 1 uses simplified math (sigmoid-ish lead ramp via `Math.tanh`, late-inning amplifiers, runner/out adjustments). Good enough for vibe detection — not a sabermetric source of truth. Real WP tables or LI lookup grids can replace the internals in a later task without touching callers. 6 new tests (3 each), all green. Not yet wired into `gumboNormalizer.js` — that happens in Task 11.

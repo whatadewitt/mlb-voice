@@ -286,8 +286,40 @@ def enqueue_ad():
 
 @app.route("/statcast", methods=["POST"])
 def statcast():
-    # Stub. Real implementation lands in Task 18.
-    return jsonify({"error": "not_implemented"}), 501
+    body = request.get_json(force=True) or {}
+    kind = body.get("kind")
+    params = body.get("params", {})
+    try:
+        if kind == "batter_season":
+            from pybaseball import batting_stats
+            year = params.get("year")
+            df = batting_stats(year, year, qual=1)
+            sub = df[df["IDfg"] == params["mlbam_id"]] if "IDfg" in df else df
+            row = sub.iloc[0].to_dict() if len(sub) else {}
+            return jsonify({"ok": True, "data": _scrub(row)})
+        if kind == "pitcher_season":
+            from pybaseball import pitching_stats
+            year = params.get("year")
+            df = pitching_stats(year, year, qual=1)
+            sub = df[df["IDfg"] == params["mlbam_id"]] if "IDfg" in df else df
+            row = sub.iloc[0].to_dict() if len(sub) else {}
+            return jsonify({"ok": True, "data": _scrub(row)})
+        return jsonify({"ok": False, "error": f"unknown kind: {kind}"}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+def _scrub(d):
+    """Drop pandas NaNs and unsupported types for JSON."""
+    import math
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, float) and math.isnan(v): continue
+        if hasattr(v, "item"): v = v.item()
+        try:
+            import json; json.dumps(v); out[k] = v
+        except (TypeError, ValueError):
+            out[k] = str(v)
+    return out
 
 if __name__ == "__main__":
     print(f"TTS backend: {TTS_BACKEND}")
