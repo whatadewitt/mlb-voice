@@ -284,24 +284,38 @@ def enqueue_ad():
     shutil.copyfile(src, dst)
     return jsonify({"status": "queued", "file": dst})
 
+def _mlbam_to_fangraphs(mlbam_id):
+    """Cross-walk MLBAM player ID to Fangraphs ID via pybaseball lookup table.
+    Returns int Fangraphs ID, or None if no mapping exists."""
+    import math
+    from pybaseball import playerid_reverse_lookup
+    df = playerid_reverse_lookup([int(mlbam_id)], key_type="mlbam")
+    if not len(df):
+        return None
+    fg = df.iloc[0].get("key_fangraphs")
+    if fg is None or (isinstance(fg, float) and math.isnan(fg)):
+        return None
+    return int(fg)
+
 @app.route("/statcast", methods=["POST"])
 def statcast():
     body = request.get_json(force=True) or {}
     kind = body.get("kind")
     params = body.get("params", {})
     try:
-        if kind == "batter_season":
-            from pybaseball import batting_stats
+        if kind in ("batter_season", "pitcher_season"):
             year = params.get("year")
-            df = batting_stats(year, year, qual=1)
-            sub = df[df["IDfg"] == params["mlbam_id"]] if "IDfg" in df else df
-            row = sub.iloc[0].to_dict() if len(sub) else {}
-            return jsonify({"ok": True, "data": _scrub(row)})
-        if kind == "pitcher_season":
-            from pybaseball import pitching_stats
-            year = params.get("year")
-            df = pitching_stats(year, year, qual=1)
-            sub = df[df["IDfg"] == params["mlbam_id"]] if "IDfg" in df else df
+            mlbam_id = params.get("mlbam_id")
+            fg_id = _mlbam_to_fangraphs(mlbam_id)
+            if fg_id is None:
+                return jsonify({"ok": True, "data": {}})
+            if kind == "batter_season":
+                from pybaseball import batting_stats
+                df = batting_stats(year, year, qual=1)
+            else:
+                from pybaseball import pitching_stats
+                df = pitching_stats(year, year, qual=1)
+            sub = df[df["IDfg"] == fg_id] if "IDfg" in df else df.iloc[0:0]
             row = sub.iloc[0].to_dict() if len(sub) else {}
             return jsonify({"ok": True, "data": _scrub(row)})
         return jsonify({"ok": False, "error": f"unknown kind: {kind}"}), 400
