@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — GameSummary: structured event log + LLM prose recap (Task 15)
+
+Created `src/memory/gameSummary.js` (`GameSummary`) — the first component of the memory subsystem (Tasks 15–18). Maintains an append-only `eventLog` of notable plays (classification `notable`, `highlight`, or `holy_shit`; routine plays are silently skipped) formatted as one-line strings with an inning tag, score, and result text (e.g., `T1: H 0-A 1. Tatis homers to right.`). A `proseRecap` string is regenerated via an LLM call only at half-inning boundaries (`refreshIfHalfInningEnded`), driven by the deterministic event log to prevent recap drift from facts. `bootstrap({eventLog, proseRecap})` restores prior state for resume scenarios (Task 18). When `openai` is `null`, the event log still works but no LLM calls are made — safe for offline/test use. `model` defaults to `process.env.SCRIPT_MODEL || "gpt-5"`. 3 new tests added; full suite is now 37/37.
+
+---
+
 ## 2026-05-09 — Remaining 8 Phase-1 narrative threads (Task 14)
 
 Replaced `src/threads/registry.js` entirely with the full 12-thread Phase-1 catalogue. Eight new threads appended: `pitcher_struggling` (2+ walks or 3+ hard-hit balls in last 5 vs. pitcher), `pitcher_dealing` (4+ Ks in last 6 or 8 consecutive non-hard-hit balls), `pitcher_pitch_count` (>85 pitches tracked in buffer), `extended_inning` (4+ distinct batters in the current half-inning), `comeback_brewing` (deficit ≤3 with 2+ scoring plays in recent buffer), `same_score_drought` (no score change in 4+ half-innings), `home_run_recent` (HR in current half-inning), and `streak_at_plate` (batter with 2+ hits this game). Helper predicates extracted to top-level constants (`HARD_HIT`, `isHR`, `isHit`, `isWalk`, `isStrikeout`, `lastNVsCurrentPitcher`, `sameHalfInning`, `battersThisHalfInning`, `hitsByBatterThisGame`). 3 new tests added (registry coverage, home_run_recent, streak_at_plate); full suite is now 34/34.
