@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — HalfInningMemory: bounded script buffer, resets per half-inning (Task 16)
+
+Created `src/memory/halfInningMemory.js` (`HalfInningMemory`) — the second component of the memory subsystem. Maintains a bounded FIFO buffer (`scripts[]`, default capacity 12) of the actual play-by-play strings the LLM produced within the current half-inning, so the script generator can avoid repeating itself. `observe({inning, half})` is called on every play: it computes a key `"${inning}-${half}"` and clears the buffer only when the key changes from a non-null prior key (first call sets the key without clearing). `push(script)` appends and evicts the oldest entry when over capacity (push-then-shift). No additional methods — intentionally minimal. 3 new tests added; full suite is now 40/40.
+
+---
+
 ## 2026-05-09 — GameSummary: structured event log + LLM prose recap (Task 15)
 
 Created `src/memory/gameSummary.js` (`GameSummary`) — the first component of the memory subsystem (Tasks 15–18). Maintains an append-only `eventLog` of notable plays (classification `notable`, `highlight`, or `holy_shit`; routine plays are silently skipped) formatted as one-line strings with an inning tag, score, and result text (e.g., `T1: H 0-A 1. Tatis homers to right.`). A `proseRecap` string is regenerated via an LLM call only at half-inning boundaries (`refreshIfHalfInningEnded`), driven by the deterministic event log to prevent recap drift from facts. `bootstrap({eventLog, proseRecap})` restores prior state for resume scenarios (Task 18). When `openai` is `null`, the event log still works but no LLM calls are made — safe for offline/test use. `model` defaults to `process.env.SCRIPT_MODEL || "gpt-5"`. 3 new tests added; full suite is now 37/37.
