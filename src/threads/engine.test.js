@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NarrativeThreadEngine } from "./engine.js";
+import { THREAD_REGISTRY } from "./registry.js";
 
 const samplePlay = (overrides = {}) => ({
   play_id: "p", inning: 5, half: "top", outs: 1, balls: 0, strikes: 0,
@@ -62,5 +63,38 @@ describe("NarrativeThreadEngine", () => {
       })
     );
     expect(t.find((x) => x.id === "risp_jam")).toBeFalsy();
+  });
+});
+
+const ids = THREAD_REGISTRY.map((t) => t.id);
+
+describe("registry coverage", () => {
+  it("contains all 12 Phase-1 thread IDs", () => {
+    const expected = [
+      "pitcher_struggling", "pitcher_dealing", "pitcher_pitch_count",
+      "extended_inning", "comeback_brewing", "same_score_drought",
+      "leverage_spike", "late_and_close", "risp_jam", "rare_event",
+      "home_run_recent", "streak_at_plate",
+    ];
+    for (const id of expected) expect(ids).toContain(id);
+  });
+});
+
+describe("home_run_recent", () => {
+  it("activates when an HR happened earlier in this half-inning", () => {
+    const e = new NarrativeThreadEngine();
+    e.observe(samplePlay({ result_text: "Tatis homers to right." }));
+    const t = e.observe(samplePlay({ result_text: "Walk." }));
+    expect(t.find((x) => x.id === "home_run_recent")).toBeTruthy();
+  });
+});
+
+describe("streak_at_plate", () => {
+  it("activates when batter has 2 hits already this game", () => {
+    const e = new NarrativeThreadEngine();
+    e.observe(samplePlay({ batter: { id: 5, name: "Vladdy" }, result_text: "single" }));
+    e.observe(samplePlay({ batter: { id: 5, name: "Vladdy" }, result_text: "double" }));
+    const t = e.observe(samplePlay({ batter: { id: 5, name: "Vladdy" } }));
+    expect(t.find((x) => x.id === "streak_at_plate")).toBeTruthy();
   });
 });
