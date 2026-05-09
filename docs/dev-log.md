@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — GameTicker (Task 12)
+
+Created `src/gameTicker.js` (`GameTicker`) — extracted from the root-level `gameScripting.js`. Accepts injected `fetchTimestamps`, `fetchFeed`, and `onPlay` so unit tests can drive it without network calls. The `speed` multiplier supports compressed-replay dev runs (e.g., `speed: 5` plays 5x fast) and `Infinity` to skip sleeps entirely in tests. `stopAfterTimestamp` prepares for scenario mode (Task 31) — the loop breaks after processing that timestamp inclusive. Sleep between ticks uses `Math.max(3, nxt - cur)` to enforce a 3-second minimum and guard against sub-3-second or negative gaps. Pipeline rewiring into the main server is deferred to Task 21. 2 new tests added; full suite is now 25/25.
+
+---
+
 ## 2026-05-09 — GameStateService composition (Task 11)
 
 Created `src/gameState/index.js` (`GameStateService`) — the stateful composer that wires together Tasks 8–10 into a single `enrich(gumbo)` call. Holds `priorSnapshot` (passed to `gumboNormalizer.normalize`) and `priorWP` across calls; computes `win_probability` and `leverage_index` via the Task 9 pure functions; resolves `wp_swing_from_prior` as `Math.abs(current - prior)` (0 on the first call); and fires concurrent `statcast.batterSeason` / `pitcherSeason` fetches, attaching results to `batter.season_stats` / `pitcher.season_stats` when non-null. This finishes the Phase 1 Week 2 gameState block — `gameScripting.js` (Task 12+) will hold one instance and call `enrich` per tick. 2 new tests added; full suite is now 23/23.
