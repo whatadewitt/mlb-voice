@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — NarrativeThreadEngine + 4 core threads (Task 13)
+
+Created `src/threads/engine.js` (`NarrativeThreadEngine`) and `src/threads/registry.js` with the first 4 thread predicates. The engine maintains a 30-play rolling buffer and evaluates each registered thread predicate against the current play; predicates return `null` (inactive) or `{weight, hint}` (active), and active threads are collected into an array returned from `observe()`. Adding a thread requires only appending an entry to `THREAD_REGISTRY` — no engine changes. First 4 threads: `late_and_close` (reads `derived.late_and_close` pre-computed by the normalizer), `leverage_spike` (fires when `wp_swing_from_prior >= 0.5`), `rare_event` (keyword match on `result_text` for triple/balk/wild pitch/etc.), and `risp_jam` (RISP + outs ≤ 1 + leverage > 1.5). 4 new tests added; full suite is now 29/29.
+
+---
+
 ## 2026-05-09 — GameTicker (Task 12)
 
 Created `src/gameTicker.js` (`GameTicker`) — extracted from the root-level `gameScripting.js`. Accepts injected `fetchTimestamps`, `fetchFeed`, and `onPlay` so unit tests can drive it without network calls. The `speed` multiplier supports compressed-replay dev runs (e.g., `speed: 5` plays 5x fast) and `Infinity` to skip sleeps entirely in tests. `stopAfterTimestamp` prepares for scenario mode (Task 31) — the loop breaks after processing that timestamp inclusive. Sleep between ticks uses `Math.max(3, nxt - cur)` to enforce a 3-second minimum and guard against sub-3-second or negative gaps. Pipeline rewiring into the main server is deferred to Task 21. 2 new tests added; full suite is now 25/25.
