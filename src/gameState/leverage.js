@@ -8,7 +8,7 @@ export function leverageIndex({ inning, half, outs, runners, lead_runs_for_batti
   // Score state: closer = higher LI.
   const absLead = Math.abs(lead_runs_for_batting_team);
   if (absLead === 0) li *= 1.2;
-  else if (absLead === 1) li *= 1.25;
+  else if (absLead === 1) li *= 1.15;
   else if (absLead >= 4) li *= 0.5;
 
   // Runners on, especially scoring position, raise LI.
