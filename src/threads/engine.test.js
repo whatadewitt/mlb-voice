@@ -39,4 +39,28 @@ describe("NarrativeThreadEngine", () => {
     const t = e.observe(samplePlay({ result_text: "Tatis triples to deep right." }));
     expect(t.find((x) => x.id === "rare_event")).toBeTruthy();
   });
+
+  it("activates risp_jam with runner on 2nd, <=1 out, leverage > 1.5", () => {
+    const e = new NarrativeThreadEngine();
+    const t = e.observe(
+      samplePlay({
+        outs: 1,
+        runners: { first: null, second: { id: 3, name: "R2" }, third: null },
+        derived: { ...samplePlay().derived, leverage_index: 2.0 },
+      })
+    );
+    expect(t.find((x) => x.id === "risp_jam")).toBeTruthy();
+  });
+
+  it("does not activate risp_jam at 2 outs even with RISP + high leverage", () => {
+    const e = new NarrativeThreadEngine();
+    const t = e.observe(
+      samplePlay({
+        outs: 2,
+        runners: { first: null, second: null, third: { id: 4, name: "R3" } },
+        derived: { ...samplePlay().derived, leverage_index: 2.0 },
+      })
+    );
+    expect(t.find((x) => x.id === "risp_jam")).toBeFalsy();
+  });
 });
