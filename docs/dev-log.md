@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — WinProbability and LeverageIndex calculators (Task 9)
+
+Added `src/gameState/winProbability.js` (`winProbability()`) and `src/gameState/leverage.js` (`leverageIndex()`). Both are pure functions; Phase 1 uses simplified math (sigmoid-ish lead ramp via `Math.tanh`, late-inning amplifiers, runner/out adjustments). Good enough for vibe detection — not a sabermetric source of truth. Real WP tables or LI lookup grids can replace the internals in a later task without touching callers. 6 new tests (3 each), all green. Not yet wired into `gumboNormalizer.js` — that happens in Task 11.
+
+---
+
 ## 2026-05-09 — EnrichedPlay shape + GumboNormalizer (Task 8)
 
 Added `src/gameState/types.js` (JSDoc-only `EnrichedPlay` typedef) and `src/gameState/gumboNormalizer.js` (`normalize(gumbo, {priorSnapshot})`) — the single canonical shape every downstream component (NarrativeThreadEngine, ScriptGenerator, HighlightDetector, Memory) will consume. `is_state_change` flags (`half_inning`, `inning`, `score`, `outs`) drive smart-state-injection in later tasks; `derived.leverage_index`, `win_probability`, and `fielding` are stubs for Tasks 9–11.
