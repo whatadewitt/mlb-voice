@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — EnrichedPlay shape + GumboNormalizer (Task 8)
+
+Added `src/gameState/types.js` (JSDoc-only `EnrichedPlay` typedef) and `src/gameState/gumboNormalizer.js` (`normalize(gumbo, {priorSnapshot})`) — the single canonical shape every downstream component (NarrativeThreadEngine, ScriptGenerator, HighlightDetector, Memory) will consume. `is_state_change` flags (`half_inning`, `inning`, `score`, `outs`) drive smart-state-injection in later tasks; `derived.leverage_index`, `win_probability`, and `fielding` are stubs for Tasks 9–11.
+
+---
+
 ## 2026-05-07 — Default TTS backend = Dia2; prefix WAVs now optional
 
 **What changed**
