@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-10 — RuntimeLog: JSONL append writer for Phase 2 training data (Task 20)
+
+Created `src/runtimeLog.js` (`RuntimeLog`) — a minimal append-only writer that logs every generated script to `scripts.jsonl` for Phase 2 fine-tune training. Constructor calls `mkdirSync` with `{ recursive: true }` on the supplied `dir`, then stores the target path. `appendScript(record)` serializes the record with `JSON.stringify` and appends a newline-terminated line via `appendFileSync`. No rotation, no validation, no schema enforcement — intentionally atomic so Task 21 (`pipeline.js`) can call it after every successful `ScriptGenerator` response without risk of data loss on crash. 1 new test added; full suite is now 53/53.
+
+---
+
 ## 2026-05-09 — ScriptGenerator: prompt builder, LLM call, retry, fallback (Task 19)
 
 Created `src/scriptGenerator/index.js` (`ScriptGenerator`) — the centerpiece of the 2026 broadcast pipeline. `ScriptGenerator` consumes an `EnrichedPlay`, active narrative threads, a `HighlightVerdict`, `gameSummaryProse`, `halfInningMemoryScripts`, and cooldown lookup functions, then produces a broadcast script string tagged with `[S1]`/`[S2]` speaker markers. Prompt assembly is split into two parts: a system prompt that encodes the vibe directive (`calm` / `energetic` / `big_moment` / `explosive`) plus the booth persona and DO NOT rules; and a user prompt that joins six blocks — state fields (via `pickStateFields`), game summary, active storylines with cooldown labels, half-inning memory, stats block, and the play sentence — filtered to truthy and separated by double newlines. The `stats_to_mention` key is excluded from the state block and emitted in its own stats block instead, so the LLM sees it exactly once, in the right context. Validation (`isWellFormed`) requires both `[S1]` and `[S2]` in the response; on malformed output or exception, the loop retries up to `maxRetries` times (default 1, meaning 2 total attempts). On final failure the class returns a template fallback — `[S1] And the pitch — <result_text>. [S2]` — so the broadcast never goes silent. 3 new tests added; full suite is now 52/52.
