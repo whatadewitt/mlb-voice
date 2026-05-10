@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — pickStateFields: smart state injection helper (Task 18)
+
+Created `src/scriptGenerator/pickStateFields.js` — the first file in the new `src/scriptGenerator/` directory. `pickStateFields(play, { stats_to_mention })` is a pure function that takes a full `EnrichedPlay` and returns a small context object containing only the fields the LLM needs right now. This is the fix for the 2025 "scoreboard reader" problem: the old system injected the full game state on every pitch, causing the model to repeat inning/outs/score on routine pitches instead of focusing on the play and active narrative threads. The new approach is conditional: `count`, `batter`, and `pitcher` are always included; `inning` is included only when `is_state_change.half_inning` or `is_state_change.inning` is true; `outs` only when `is_state_change.outs` is true; `score` only when `is_state_change.score` is true or `derived.late_and_close` is true; `stats_to_mention` only when the caller passes a non-empty array. No helpers, no memoization, single named export. 5 new tests added; full suite is now 49/49.
+
+---
+
 ## 2026-05-09 — TouchedStorylines: cooldown tracker for narrative storylines (Task 17)
 
 Created `src/memory/cooldowns.js` and `src/memory/touchedStorylines.js` — the third component of the memory subsystem. `TouchedStorylines` tracks which narrative storylines have been mentioned recently in generated scripts so the script generator can avoid repeating itself. `recordScript(scriptText, {ids})` does a post-pass keyword/substring match against the lowercased script text; any keyword hit flags that storyline as "just touched" (playsAgo = 0) and records its kind. `tick()` increments playsAgo for every tracked storyline. `cooldownFor(id)` returns `"strict"`, `"soft"`, or `"fresh"` via the `cooldownStateFor` helper in `cooldowns.js`. Cooldown defaults: thread 5+5 plays, event 3+4, stat 2+0 (the `[strict, soft]` pair means playsAgo ≤ strict → strict; strict < playsAgo ≤ strict+soft → soft; otherwise fresh). Unknown kinds fall back to `[3, 3]`; null/undefined playsAgo returns fresh. 4 new tests added; full suite is now 44/44.
