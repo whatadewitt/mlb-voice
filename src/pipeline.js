@@ -31,7 +31,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   });
 
   const buildKeywordIds = ({ activeThreads }) =>
-    activeThreads.map((t) => ({ id: `thread:${t.id}`, kind: "thread", keywords: [t.id.replaceAll("_", " "), t.hint.toLowerCase().slice(0, 30)] }));
+    activeThreads.map((t) => ({ id: `thread:${t.id}`, kind: "thread", keywords: [t.id.replaceAll("_", " "), (t.hint ?? "").toLowerCase().slice(0, 30)] }));
 
   return {
     async onGumbo(gumbo) {
