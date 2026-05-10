@@ -5,6 +5,15 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-10 — Pipeline wiring: GameTicker → pipeline → TTS end-to-end (Task 21)
+
+Created `src/pipeline.js` (`buildPipeline`) and replaced the 2025 `gameScripting.js` with the new 2026 entry point. `buildPipeline({ year, runDir, openai, voiceUrl })` instantiates one each of `StatcastClient`, `GameStateService`, `NarrativeThreadEngine`, `GameSummary`, `HalfInningMemory`, `TouchedStorylines`, `ScriptGenerator`, `RuntimeLog`, and `Logger`, then returns an `onGumbo(gumbo)` async function that runs the full per-play sequence: enrich → refresh half-inning summary → observe half-inning → observe threads → stub-classify highlight → generate script → record memory/touched/runtimelog → log stage → POST to the TTS server. The `HighlightDetector` is intentionally stubbed (`classification: "routine"`, `vibe: "calm"`, empty triggers/stats) until Task 23 replaces it. `priorHalfInning` is closed over per pipeline instance so the summary refresh fires at half-inning boundaries; `buildKeywordIds` derives substring keywords from each thread id (underscores → spaces) and the first 30 chars of the thread hint, which `TouchedStorylines.recordScript` uses to mark threads as recently touched. The TTS POST is wrapped in try/catch so a dead voice server logs `voice_post_failed` rather than crashing the ticker. `gameScripting.js` is now ~25 lines: load env, construct OpenAI client, mkdir `logs/<GAME_ID>_<STARTING_TS>`, build the pipeline, hand `onGumbo` to a `GameTicker`, and `run()`. The 2025 `game.js` is left in place — other tooling (scenarios, smoke scripts) may still reference it, and the plan does not ask for its removal in this task. No new tests; integration is verified by smoke run, which is a user-side step. `node --check` clean on both files; full suite still 53/53.
+
+**What I tried and dropped**
+n/a — audible smoke is a user-side step (requires CUDA Dia2 box / API keys); JS validated for parse + import correctness only.
+
+---
+
 ## 2026-05-10 — RuntimeLog: JSONL append writer for Phase 2 training data (Task 20)
 
 Created `src/runtimeLog.js` (`RuntimeLog`) — a minimal append-only writer that logs every generated script to `scripts.jsonl` for Phase 2 fine-tune training. Constructor calls `mkdirSync` with `{ recursive: true }` on the supplied `dir`, then stores the target path. `appendScript(record)` serializes the record with `JSON.stringify` and appends a newline-terminated line via `appendFileSync`. No rotation, no validation, no schema enforcement — intentionally atomic so Task 21 (`pipeline.js`) can call it after every successful `ScriptGenerator` response without risk of data loss on crash. 1 new test added; full suite is now 53/53.
