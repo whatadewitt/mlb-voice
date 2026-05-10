@@ -5,6 +5,12 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-09 — TouchedStorylines: cooldown tracker for narrative storylines (Task 17)
+
+Created `src/memory/cooldowns.js` and `src/memory/touchedStorylines.js` — the third component of the memory subsystem. `TouchedStorylines` tracks which narrative storylines have been mentioned recently in generated scripts so the script generator can avoid repeating itself. `recordScript(scriptText, {ids})` does a post-pass keyword/substring match against the lowercased script text; any keyword hit flags that storyline as "just touched" (playsAgo = 0) and records its kind. `tick()` increments playsAgo for every tracked storyline. `cooldownFor(id)` returns `"strict"`, `"soft"`, or `"fresh"` via the `cooldownStateFor` helper in `cooldowns.js`. Cooldown defaults: thread 5+5 plays, event 3+4, stat 2+0 (the `[strict, soft]` pair means playsAgo ≤ strict → strict; strict < playsAgo ≤ strict+soft → soft; otherwise fresh). Unknown kinds fall back to `[3, 3]`; null/undefined playsAgo returns fresh. 4 new tests added; full suite is now 44/44.
+
+---
+
 ## 2026-05-09 — HalfInningMemory: bounded script buffer, resets per half-inning (Task 16)
 
 Created `src/memory/halfInningMemory.js` (`HalfInningMemory`) — the second component of the memory subsystem. Maintains a bounded FIFO buffer (`scripts[]`, default capacity 12) of the actual play-by-play strings the LLM produced within the current half-inning, so the script generator can avoid repeating itself. `observe({inning, half})` is called on every play: it computes a key `"${inning}-${half}"` and clears the buffer only when the key changes from a non-null prior key (first call sets the key without clearing). `push(script)` appends and evicts the oldest entry when over capacity (push-then-shift). No additional methods — intentionally minimal. 3 new tests added; full suite is now 40/40.
