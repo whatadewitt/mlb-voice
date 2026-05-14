@@ -52,4 +52,35 @@ describe("ScriptGenerator", () => {
     const out = await gen.generate(baseInputs());
     expect(out).toMatch(/\[S1\]/);
   });
+
+  it("omits temperature for gpt-5 (which rejects non-default temperature)", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Hi. [S2] Yep." } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } }, model: "gpt-5" });
+    await gen.generate(baseInputs());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0]).not.toHaveProperty("temperature");
+  });
+
+  it("includes temperature for gpt-4o-mini", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Hi. [S2] Yep." } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } }, model: "gpt-4o-mini" });
+    await gen.generate(baseInputs());
+    expect(create.mock.calls[0][0].temperature).toBeCloseTo(0.85);
+  });
+
+  it("logs script_generate_failed when fallback fires and logger is provided", async () => {
+    const error = vi.fn();
+    const fakeLLM = {
+      chat: { completions: { create: vi.fn().mockRejectedValue(new Error("boom")) } },
+    };
+    const gen = new ScriptGenerator({ openai: fakeLLM, maxRetries: 0, logger: { error } });
+    await gen.generate(baseInputs({ enriched: { ...baseInputs().enriched, play_id: "p-1" } }));
+    expect(error).toHaveBeenCalledWith("script_generate_failed", expect.objectContaining({
+      model: expect.any(String), play_id: "p-1", reason: expect.stringContaining("boom"),
+    }));
+  });
 });

@@ -67,11 +67,21 @@ function fallbackScript(enriched) {
   return `[S1] And the pitch — ${result} [S2]`;
 }
 
+// gpt-5 family and o-series reasoning models reject non-default temperature.
+function modelAcceptsTemperature(model) {
+  if (!model) return true;
+  const m = String(model).toLowerCase();
+  if (m.startsWith("gpt-5")) return false;
+  if (/^o\d/.test(m)) return false;
+  return true;
+}
+
 export class ScriptGenerator {
-  constructor({ openai, model = process.env.SCRIPT_MODEL || "gpt-5", maxRetries = 1 } = {}) {
+  constructor({ openai, model = process.env.SCRIPT_MODEL || "gpt-5", maxRetries = 1, logger = null } = {}) {
     this.openai = openai;
     this.model = model;
     this.maxRetries = maxRetries;
+    this.logger = logger;
   }
 
   async generate(inputs) {
@@ -80,19 +90,25 @@ export class ScriptGenerator {
     let lastErr = null;
     while (attempts <= this.maxRetries) {
       try {
-        const completion = await this.openai.chat.completions.create({
-          model: this.model,
-          messages,
-          temperature: 0.85,
-        });
+        const request = { model: this.model, messages };
+        if (modelAcceptsTemperature(this.model)) request.temperature = 0.85;
+        const completion = await this.openai.chat.completions.create(request);
         const raw = completion.choices[0]?.message?.content ?? "";
         const cleaned = raw.replace(/\n+/g, " ").trim();
         if (isWellFormed(cleaned)) return cleaned;
-        lastErr = new Error("malformed output");
+        lastErr = new Error(`malformed output: ${cleaned.slice(0, 120)}`);
       } catch (e) {
         lastErr = e;
       }
       attempts++;
+    }
+    if (this.logger) {
+      this.logger.error("script_generate_failed", {
+        model: this.model,
+        attempts,
+        play_id: inputs.enriched?.play_id,
+        reason: String(lastErr?.message ?? lastErr),
+      });
     }
     return fallbackScript(inputs.enriched);
   }

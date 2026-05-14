@@ -16,9 +16,9 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   const summary = new GameSummary({ openai });
   const halfInning = new HalfInningMemory();
   const touched = new TouchedStorylines();
-  const scriptGen = new ScriptGenerator({ openai });
   const runtimeLog = new RuntimeLog({ dir: runDir });
   const logger = new Logger({ runId: runDir });
+  const scriptGen = new ScriptGenerator({ openai, logger });
 
   let priorHalfInning = null;
   // Highlight detector is wired in Task 23. Until then, every play is "routine".
