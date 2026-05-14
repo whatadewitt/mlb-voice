@@ -9,7 +9,10 @@ import threading
 import wave
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 from flask import Flask, Response, request, jsonify, send_from_directory
+
+load_dotenv()
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
@@ -19,6 +22,7 @@ HLS_DIR = "hls"
 ADS_DIR = "ads"
 PREFIX_DIR = "prefixes"
 LOG_DIR = "logs"
+WAVS_DIR = os.path.join(LOG_DIR, "wavs")
 SEGMENT_TIME = 2
 PLAYLIST_WINDOW = 15
 DELETE_DELAY = 2
@@ -30,6 +34,7 @@ Path(HLS_DIR).mkdir(exist_ok=True)
 Path(ADS_DIR).mkdir(exist_ok=True)
 Path(PREFIX_DIR).mkdir(exist_ok=True)
 Path(LOG_DIR).mkdir(exist_ok=True)
+Path(WAVS_DIR).mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,8 +86,19 @@ def tts_openai(text: str, voice_set: str, out_path: str) -> None:
 
 _dia2_model = None
 _dia2_lock = threading.Lock()
-DIA2_SEED = 0
+DIA2_SEED = 424242
 DIA2_MIN_PREFIX_SECONDS = 2.0
+
+def _torch_compile_supported() -> bool:
+    """torch.compile on CUDA needs Triton. Windows ships a broken stub; Linux/RunPod has it."""
+    import torch
+    if not torch.cuda.is_available():
+        return False
+    try:
+        import triton
+    except ImportError:
+        return False
+    return hasattr(triton, "__version__") and hasattr(triton, "Config")
 
 def _dia2_device_dtype():
     import torch
@@ -120,12 +136,49 @@ def tts_dia2(text: str, voice_set: str, out_path: str) -> None:
         cfg_scale=2.0,
         audio=SamplingConfig(temperature=0.8, top_k=50),
         use_cuda_graph=torch.cuda.is_available(),
+        use_torch_compile=_torch_compile_supported(),
     )
     if use_prefix:
         cfg_kwargs["prefix_speaker_1"] = s1
         cfg_kwargs["prefix_speaker_2"] = s2
     log.info(f"tts_dia2 voice_set={voice_set} use_prefix={use_prefix} seed={DIA2_SEED}")
     model.generate(text, config=GenerationConfig(**cfg_kwargs), output_wav=out_path, verbose=True)
+
+def _warmup_dia2() -> None:
+    """Preload Mimi codec + (on Linux) trigger torch.compile autotune before serving.
+    Skips CUDA graph capture: capturing during warmup leaks cuBLAS state that breaks
+    the next real call with CUBLAS_STATUS_NOT_INITIALIZED."""
+    import tempfile, torch
+    from dia2 import GenerationConfig, SamplingConfig
+    tmp_wav = os.path.join(tempfile.gettempdir(), "dia2_warmup.wav")
+    tc_supported = _torch_compile_supported()
+    log.info(f"dia2 warmup starting (torch.compile={'enabled' if tc_supported else 'disabled (no Triton)'})")
+    t0 = time.time()
+    try:
+        model = _load_dia2()
+        torch.manual_seed(DIA2_SEED)
+        model.generate(
+            "[S1] Warm up. [S2] Ready.",
+            config=GenerationConfig(
+                cfg_scale=2.0,
+                audio=SamplingConfig(temperature=0.8, top_k=50),
+                use_cuda_graph=False,
+                use_torch_compile=tc_supported,
+            ),
+            output_wav=tmp_wav,
+            verbose=True,
+        )
+        # Force bf16 cuBLAS handle init so the first real /generate's graph capture works.
+        if torch.cuda.is_available():
+            tmp = torch.empty((2, 2), device="cuda", dtype=torch.bfloat16)
+            torch.matmul(tmp, tmp)
+            torch.cuda.synchronize()
+        log.info(f"dia2 warmup complete elapsed={time.time()-t0:.1f}s")
+    except Exception:
+        log.exception("dia2 warmup failed (server will continue; first /generate will be slow)")
+    finally:
+        try: os.remove(tmp_wav)
+        except OSError: pass
 
 TTS_BACKENDS = {"stub": tts_stub, "openai": tts_openai, "dia2": tts_dia2}
 
@@ -153,7 +206,7 @@ def update_playlist(segment_files, media_seq):
 def segment_wav_to_hls(wav_path, seq):
     pattern = os.path.join(HLS_DIR, f"audio-%03d.ts")
     subprocess.run([
-        "ffmpeg", "-y", "-i", wav_path,
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", wav_path,
         "-f", "segment", "-segment_time", str(SEGMENT_TIME),
         "-c:a", "aac", "-b:a", "128k", pattern,
     ], check=True)
@@ -190,14 +243,16 @@ def hls_segmenter_loop():
                     seg_durs = [_ts_seconds(s) for s in segs]
                     log.info(f"segmenter wav_segged count={len(segs)} total_dur={sum(seg_durs):.2f}s seg_durs={[round(d,2) for d in seg_durs]}")
                     pending_audio.extend(segs)
-                    os.remove(wav_path)
+                    archive_path = os.path.join(WAVS_DIR, os.path.basename(wav_path))
+                    shutil.move(wav_path, archive_path)
+                    log.info(f"segmenter wav_archived path={archive_path}")
             if pending_audio:
                 segment_files.append(pending_audio.pop(0))
             else:
                 silence_name = f"seg-{seq}_silence.ts"
                 silence_path = os.path.join(HLS_DIR, silence_name)
                 subprocess.run([
-                    "ffmpeg", "-y",
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                     "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=24000",
                     "-t", str(SEGMENT_TIME),
                     "-c:a", "aac", "-b:a", "128k", "-f", "mpegts", silence_path,
@@ -320,6 +375,7 @@ def statcast():
             return jsonify({"ok": True, "data": _scrub(row)})
         return jsonify({"ok": False, "error": f"unknown kind: {kind}"}), 400
     except Exception as e:
+        log.warning(f"/statcast failed kind={kind} params={params} reason={e}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 def _scrub(d):
@@ -341,4 +397,7 @@ if __name__ == "__main__":
         print("⏳ Loading Dia2-2B (one-time)...")
         _load_dia2()
         print("✅ Dia2 ready.")
+        print("⏳ Warming up (torch.compile autotune; 30-90s on first run)...")
+        _warmup_dia2()
+        print("✅ Warmup complete.")
     app.run(host="0.0.0.0", port=5025, threaded=True, debug=False)
