@@ -31,4 +31,20 @@ describe("StatcastClient", () => {
     const stats = await client.batterSeason({ mlbamId: 99, year: 2025 });
     expect(stats).toBeNull();
   });
+
+  it("caches null on server error so subsequent calls skip the backend", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const client = new StatcastClient({ baseUrl: "http://localhost:5025" });
+    await client.batterSeason({ mlbamId: 99, year: 2025 });
+    await client.batterSeason({ mlbamId: 99, year: 2025 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("caches null on network error so subsequent calls skip the backend", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+    const client = new StatcastClient({ baseUrl: "http://localhost:5025" });
+    await client.batterSeason({ mlbamId: 88, year: 2025 });
+    await client.batterSeason({ mlbamId: 88, year: 2025 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

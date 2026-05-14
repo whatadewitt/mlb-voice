@@ -9,20 +9,20 @@ export class StatcastClient {
     const key = `${kind}:${JSON.stringify(params)}`;
     const hit = this.cache.get(key);
     if (hit && Date.now() - hit.t < this.ttlMs) return hit.v;
+    let v = null;
     try {
       const res = await fetch(`${this.baseUrl}/statcast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind, params }),
       });
-      if (!res.ok) return null;
-      const j = await res.json();
-      const v = j.ok ? j.data : null;
-      this.cache.set(key, { t: Date.now(), v });
-      return v;
-    } catch {
-      return null;
-    }
+      if (res.ok) {
+        const j = await res.json();
+        v = j.ok ? j.data : null;
+      }
+    } catch {}
+    this.cache.set(key, { t: Date.now(), v });
+    return v;
   }
 
   batterSeason({ mlbamId, year }) {
