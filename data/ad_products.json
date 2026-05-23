@@ -1,0 +1,14 @@
+{
+  "products": [
+    {
+      "id": "hotdog_can",
+      "name": "HotDog-In-A-Can",
+      "pitch": "It's a hot dog. In a can. No bun. We thought of that."
+    },
+    {
+      "id": "thinking_cap",
+      "name": "Frosty's Thinking Cap",
+      "pitch": "For the modern gentleman who must think."
+    }
+  ]
+}

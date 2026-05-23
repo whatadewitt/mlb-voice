@@ -5,6 +5,15 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-23 — AdLibrary: offline batch script generator (Task 24)
+
+Created `scripts/genAds.js` + placeholder `data/ad_products.json` (2 products) and `data/ad_templates.json` (2 templates: `old_timey_pitch`, `testimonial`). The script fans out the products × templates cross-product against `SCRIPT_MODEL` (default `gpt-5`), writing one `[S1]/[S2]`-formatted `.txt` per pair to `data/ad_scripts/`. Reused the `modelAcceptsTemperature` guard from `ScriptGenerator` so `temperature: 0.95` is only sent when the model accepts it — gpt-5 and o-series reject non-default temperature, so the original plan would have 400'd against the default model. Each completion runs in its own try/catch and logs a `✓`/`✗` line so a single failure doesn't abort the batch. `.gitignore` updated: `data/ad_scripts/*.txt` ignored (regenerated artifacts), with `!data/ad_products.json` and `!data/ad_templates.json` exceptions so the source data files escape the global `*.json` ignore. First batch run completed cleanly (4/4 scripts, ~400–620 bytes each, all closed with the opposite empty tag as required). Task 25 (TTS render) deferred — held until the Dia2 vs ElevenLabs backend choice is made tonight, since `renderAds.js` POSTs to the chosen TTS endpoint.
+
+**What I tried and dropped**
+n/a — placeholder product list per plan; real product copy is a deferred content-session task.
+
+---
+
 ## 2026-05-23 — HighlightDetector: rules-based tier classification + pipeline wire-up (Tasks 22, 23)
 
 Created `src/highlightDetector.js` (`HighlightDetector`) and replaced the routine-only stub in `src/pipeline.js`. `classify(play)` runs the `EnrichedPlay` through three tier predicates in descending severity — `holy_shit` (HR with WP swing ≥ 0.20, walk-off, catch probability ≤ 20%, exit velo ≥ 115, or any hit at LI ≥ 4.0), `highlight` (HR, catch probability ≤ 40%, exit velo ≥ 108, WP swing ≥ 0.10, K with bases loaded, double play, error late-and-close), and `notable` (XBH, K with RISP, exit velo ≥ 100, LI ≥ 1.8) — short-circuiting at the first matching tier and falling through to `routine`. Each tier returns its triggered rule names so the script generator (and the runtime log) can see *why* a play was elevated. `curateStats` then pulls 1–3 stats from the play (exit velo, launch angle, distance, catch probability, sprint speed, WP swing, LI) for the `stats_to_mention` block — gated so a routine play contributes none and the WP-swing / LI rows only fire above their notability thresholds. Vibe and suggested length are constant lookups keyed by tier (`calm/energetic/big_moment/explosive`; 8/12/18/25s). In `src/pipeline.js`, the `stubHighlight` closure was deleted and `new HighlightDetector()` is now constructed alongside the other singletons; `verdict = highlightDet.classify(enriched)` replaces the stub call. 8 new tests added; full suite is now 66/66. Audible smoke is user-side.
