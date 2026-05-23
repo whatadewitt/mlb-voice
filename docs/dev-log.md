@@ -5,6 +5,15 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-23 — AdLibrary: TTS render to ads/*.wav (Task 25)
+
+Created `scripts/renderAds.js` — reads every `data/ad_scripts/*.txt`, POSTs each script to the running TTS server's `/generate` endpoint, and copies the resulting wav from `queue/` to `ads/<id>.wav`. Two practical deviations from the plan's literal: (1) `/generate` returns the queued wav path synchronously in its response body (`{"status":"queued","file":"queue/play-XXX.wav"}`), so the plan's 30-iteration polling loop against `queue/` was replaced with a direct read of `body.file` — saves both wall time and the race window between the HLS segmenter sweeping the wav and the copy landing. (2) The script kicks `/start_hls` itself (idempotent — server returns `"started"` on cold or `"already_running"` on warm), because `/generate` 500s with `"hls not running"` until the HLS thread is up, and forcing the user to remember a manual curl before each render was a footgun. Per-file timing is reported (sec since POST) and the script exits non-zero if any wav failed, so this can be chained into a one-keystroke demo wrapper later (Task 29). First batch ran clean against dia2: 4/4 wavs, 72–101s each (each ad is 7–8 [S1]/[S2] lines, so dia2 generates ~30s of audio per script). Output sizes 1.1–1.6 MB — reasonable for 24kHz mono PCM at that length. `ads/*.wav` already gitignored from a prior task.
+
+**What I tried and dropped**
+The plan's `setTimeout`-poll-`readdirSync` loop. Once I read the `/generate` handler and saw it returns the file path synchronously, polling was obviously dead weight — and worse, it gave the HLS segmenter a multi-second window to sweep the wav out from under us between the POST returning and the copy firing.
+
+---
+
 ## 2026-05-23 — AdLibrary: offline batch script generator (Task 24)
 
 Created `scripts/genAds.js` + placeholder `data/ad_products.json` (2 products) and `data/ad_templates.json` (2 templates: `old_timey_pitch`, `testimonial`). The script fans out the products × templates cross-product against `SCRIPT_MODEL` (default `gpt-5`), writing one `[S1]/[S2]`-formatted `.txt` per pair to `data/ad_scripts/`. Reused the `modelAcceptsTemperature` guard from `ScriptGenerator` so `temperature: 0.95` is only sent when the model accepts it — gpt-5 and o-series reject non-default temperature, so the original plan would have 400'd against the default model. Each completion runs in its own try/catch and logs a `✓`/`✗` line so a single failure doesn't abort the batch. `.gitignore` updated: `data/ad_scripts/*.txt` ignored (regenerated artifacts), with `!data/ad_products.json` and `!data/ad_templates.json` exceptions so the source data files escape the global `*.json` ignore. First batch run completed cleanly (4/4 scripts, ~400–620 bytes each, all closed with the opposite empty tag as required). Task 25 (TTS render) deferred — held until the Dia2 vs ElevenLabs backend choice is made tonight, since `renderAds.js` POSTs to the chosen TTS endpoint.
