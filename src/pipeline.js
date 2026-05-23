@@ -6,6 +6,7 @@ import { GameSummary } from "./memory/gameSummary.js";
 import { HalfInningMemory } from "./memory/halfInningMemory.js";
 import { TouchedStorylines } from "./memory/touchedStorylines.js";
 import { ScriptGenerator } from "./scriptGenerator/index.js";
+import { HighlightDetector } from "./highlightDetector.js";
 import { RuntimeLog } from "./runtimeLog.js";
 import { Logger } from "./logger.js";
 
@@ -19,16 +20,9 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   const runtimeLog = new RuntimeLog({ dir: runDir });
   const logger = new Logger({ runId: runDir });
   const scriptGen = new ScriptGenerator({ openai, logger });
+  const highlightDet = new HighlightDetector();
 
   let priorHalfInning = null;
-  // Highlight detector is wired in Task 23. Until then, every play is "routine".
-  const stubHighlight = (enriched) => ({
-    classification: "routine",
-    triggers: [],
-    stats_to_mention: [],
-    vibe: "calm",
-    suggested_length_seconds: 10,
-  });
 
   const buildKeywordIds = ({ activeThreads }) =>
     activeThreads.map((t) => ({ id: `thread:${t.id}`, kind: "thread", keywords: [t.id.replaceAll("_", " "), (t.hint ?? "").toLowerCase().slice(0, 30)] }));
@@ -41,7 +35,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       priorHalfInning = { inning: enriched.inning, half: enriched.half };
 
       const activeThreads = threads.observe(enriched);
-      const verdict = stubHighlight(enriched);
+      const verdict = highlightDet.classify(enriched);
 
       const script = await scriptGen.generate({
         enriched,
