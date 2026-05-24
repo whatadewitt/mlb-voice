@@ -1,5 +1,8 @@
 # Voice Prefixes
 
+> Only used by `TTS_BACKEND=dia2`. The default `elevenlabs` backend
+> resolves voices by name via the ElevenLabs API and ignores this dir.
+
 Dia2 conditions on prefix audio for stable speakers. We need 4 files:
 
 - `broadcaster_s1.wav` — play-by-play voice (excitable)

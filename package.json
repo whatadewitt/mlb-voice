@@ -14,6 +14,9 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "demo": "node scripts/demo.mjs standard",
+    "demo:homer": "node scripts/demo.mjs homer",
+    "demo:ads": "node scripts/demo.mjs ads",
     "hydrate": "GAME=Dummy node game.js",
     "play:SDatTOR": "GAME=SDatTOR node game.js",
     "play:ATLatWAS": "GAME=ATLatWAS node game.js",

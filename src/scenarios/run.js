@@ -24,9 +24,12 @@ export async function runScenario(scenarioPath) {
   const startIdx = sc.source.start_play_index ?? 0;
   const limit = sc.source.stop_after_plays ?? 5;
   const endIdx = Math.min(startIdx + limit, allPlays.length);
-  const speed = sc.source.speed || 1;
+  // SPEED env var overrides scenario YAML so demo pacing can be tuned without
+  // editing scenario files. Sized originally for Dia2's slow generation; with
+  // elevenlabs the per-play TTS is ~2-3s so the inter-play wait is mostly dead air.
+  const speed = Number(process.env.SPEED) || sc.source.speed || 1;
 
-  console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture}`);
+  console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture} (speed=${speed})`);
 
   for (let i = startIdx; i < endIdx; i++) {
     const slim = JSON.parse(JSON.stringify(gumbo));

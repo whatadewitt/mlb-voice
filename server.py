@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import shutil
@@ -27,7 +28,7 @@ SEGMENT_TIME = 2
 PLAYLIST_WINDOW = 15
 DELETE_DELAY = 2
 
-TTS_BACKEND = os.environ.get("TTS_BACKEND", "dia2").lower()
+TTS_BACKEND = os.environ.get("TTS_BACKEND", "elevenlabs").lower()
 
 Path(QUEUE_DIR).mkdir(exist_ok=True)
 Path(HLS_DIR).mkdir(exist_ok=True)
@@ -184,7 +185,130 @@ def _warmup_dia2() -> None:
         try: os.remove(tmp_wav)
         except OSError: pass
 
-TTS_BACKENDS = {"stub": tts_stub, "openai": tts_openai, "dia2": tts_dia2}
+ELEVEN_API_BASE = "https://api.elevenlabs.io/v1"
+ELEVEN_MODEL = os.environ.get("ELEVEN_LABS_MODEL", "eleven_flash_v2_5")
+ELEVEN_SAMPLE_RATE = 24000
+ELEVEN_DEFAULT_S1 = "Jerry B. - Classic Radio DJ & Energetic"
+ELEVEN_DEFAULT_S2 = "Marty B"
+ELEVEN_VOICE_REQUEST = {
+    "broadcaster": {
+        "S1": os.environ.get("ELEVEN_LABS_VOICE_S1", ELEVEN_DEFAULT_S1),
+        "S2": os.environ.get("ELEVEN_LABS_VOICE_S2", ELEVEN_DEFAULT_S2),
+    },
+    "ad_announcer": {
+        "S1": os.environ.get("ELEVEN_LABS_VOICE_AD_S1", os.environ.get("ELEVEN_LABS_VOICE_S1", ELEVEN_DEFAULT_S1)),
+        "S2": os.environ.get("ELEVEN_LABS_VOICE_AD_S2", os.environ.get("ELEVEN_LABS_VOICE_S2", ELEVEN_DEFAULT_S2)),
+    },
+}
+_eleven_voice_id_cache: dict[str, str] = {}
+_eleven_voice_lock = threading.Lock()
+
+_SPEAKER_RE = re.compile(r"\[S([12])\]\s*([^\[]*)", re.DOTALL)
+
+def _split_script_by_speaker(text: str) -> list[tuple[str, str]]:
+    """Split a script like '[S1] foo [S2] bar [S1]' into [('S1','foo'),('S2','bar')].
+    Empty trailing handoff tag (e.g. ' [S1]' at end) is dropped."""
+    out = []
+    for m in _SPEAKER_RE.finditer(text):
+        line = m.group(2).strip()
+        if line:
+            out.append((f"S{m.group(1)}", line))
+    return out
+
+def _looks_like_voice_id(s: str) -> bool:
+    """ElevenLabs voice IDs are 20-char alphanumeric. Names usually contain a space."""
+    return bool(re.fullmatch(r"[A-Za-z0-9]{18,32}", s or ""))
+
+def _resolve_elevenlabs_voice_id(name_or_id: str, api_key: str) -> str:
+    """Resolve a configured value (name or id) to a voice_id. Cached per process."""
+    with _eleven_voice_lock:
+        cached = _eleven_voice_id_cache.get(name_or_id)
+        if cached:
+            return cached
+        if _looks_like_voice_id(name_or_id):
+            _eleven_voice_id_cache[name_or_id] = name_or_id
+            return name_or_id
+        import requests
+        # next_page_token paginates; we walk it because some accounts have many.
+        token = None
+        target = name_or_id.strip().lower()
+        while True:
+            params = {"page_size": 100}
+            if token: params["next_page_token"] = token
+            r = requests.get(f"{ELEVEN_API_BASE}/voices", headers={"xi-api-key": api_key},
+                             params=params, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            for v in data.get("voices", []):
+                if (v.get("name") or "").strip().lower() == target:
+                    vid = v["voice_id"]
+                    _eleven_voice_id_cache[name_or_id] = vid
+                    log.info(f"elevenlabs resolved voice name={name_or_id!r} -> id={vid}")
+                    return vid
+            token = data.get("next_page_token")
+            if not token: break
+        raise RuntimeError(f"elevenlabs voice not found: {name_or_id!r}")
+
+def _eleven_tts_pcm(voice_id: str, text: str, api_key: str) -> bytes:
+    """Hit ElevenLabs streaming TTS, request raw PCM at 24kHz, return bytes."""
+    import requests
+    url = f"{ELEVEN_API_BASE}/text-to-speech/{voice_id}/stream"
+    r = requests.post(
+        url,
+        headers={"xi-api-key": api_key, "Content-Type": "application/json", "accept": "audio/pcm"},
+        params={"output_format": f"pcm_{ELEVEN_SAMPLE_RATE}"},
+        json={"text": text, "model_id": ELEVEN_MODEL},
+        timeout=60,
+    )
+    if not r.ok:
+        raise RuntimeError(f"elevenlabs TTS failed {r.status_code}: {r.text[:300]}")
+    return r.content
+
+def tts_elevenlabs(text: str, voice_set: str, out_path: str) -> None:
+    """Parse [S1]/[S2] script, fetch PCM per line from ElevenLabs with the right
+    voice, concatenate (with a short silence between lines) into a 24kHz mono WAV."""
+    api_key = os.environ.get("ELEVEN_LABS_API_KEY")
+    if not api_key:
+        raise RuntimeError("ELEVEN_LABS_API_KEY not set")
+    voice_map = ELEVEN_VOICE_REQUEST.get(voice_set) or ELEVEN_VOICE_REQUEST["broadcaster"]
+    lines = _split_script_by_speaker(text)
+    if not lines:
+        # No speaker tags — treat the whole text as a single S1 line.
+        lines = [("S1", text.strip())]
+    # 120ms silence between lines for natural cadence (2 bytes * 24000 hz * 0.12s = 5760 bytes).
+    gap = b"\x00" * int(ELEVEN_SAMPLE_RATE * 0.12) * 2
+    pcm_chunks: list[bytes] = []
+    for i, (speaker, line) in enumerate(lines):
+        voice_name = voice_map.get(speaker) or voice_map["S1"]
+        vid = _resolve_elevenlabs_voice_id(voice_name, api_key)
+        pcm = _eleven_tts_pcm(vid, line, api_key)
+        if i > 0:
+            pcm_chunks.append(gap)
+        pcm_chunks.append(pcm)
+    audio = b"".join(pcm_chunks)
+    with wave.open(out_path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(ELEVEN_SAMPLE_RATE)
+        wf.writeframes(audio)
+    log.info(f"tts_elevenlabs voice_set={voice_set} lines={len(lines)} bytes={len(audio)}")
+
+def _warmup_elevenlabs() -> None:
+    """Pre-resolve voice IDs so the first /generate doesn't pay the lookup cost."""
+    api_key = os.environ.get("ELEVEN_LABS_API_KEY")
+    if not api_key:
+        log.warning("elevenlabs warmup skipped: ELEVEN_LABS_API_KEY not set")
+        return
+    t0 = time.time()
+    try:
+        for vset, vmap in ELEVEN_VOICE_REQUEST.items():
+            for spk, name in vmap.items():
+                _resolve_elevenlabs_voice_id(name, api_key)
+        log.info(f"elevenlabs warmup complete elapsed={time.time()-t0:.2f}s model={ELEVEN_MODEL}")
+    except Exception:
+        log.exception("elevenlabs warmup failed (server will continue; first /generate will surface the error)")
+
+TTS_BACKENDS = {"stub": tts_stub, "openai": tts_openai, "dia2": tts_dia2, "elevenlabs": tts_elevenlabs}
 
 def run_tts(text: str, voice_set: str, out_path: str) -> None:
     fn = TTS_BACKENDS.get(TTS_BACKEND)
@@ -412,4 +536,8 @@ if __name__ == "__main__":
         print("⏳ Warming up (torch.compile autotune; 30-90s on first run)...")
         _warmup_dia2()
         print("✅ Warmup complete.")
+    elif TTS_BACKEND == "elevenlabs":
+        print("⏳ Resolving ElevenLabs voice IDs...")
+        _warmup_elevenlabs()
+        print("✅ ElevenLabs ready.")
     app.run(host="0.0.0.0", port=5025, threaded=True, debug=False)
