@@ -71,8 +71,12 @@ playlist_path = os.path.join(HLS_DIR, "playlist.m3u8")
 # ---------- TTS backends ----------
 
 def tts_stub(text: str, voice_set: str, out_path: str) -> None:
-    """Pipeline-only test backend: copies silence.wav to out_path."""
-    shutil.copyfile(SILENCE_WAV, out_path)
+    """Pipeline-only test backend: writes 1s of silence at 24kHz mono."""
+    with wave.open(out_path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(24000)
+        wf.writeframes(b"\x00" * (24000 * 2))
 
 def tts_openai(text: str, voice_set: str, out_path: str) -> None:
     from openai import OpenAI
