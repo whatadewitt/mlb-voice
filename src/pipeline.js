@@ -7,6 +7,7 @@ import { HalfInningMemory } from "./memory/halfInningMemory.js";
 import { TouchedStorylines } from "./memory/touchedStorylines.js";
 import { ScriptGenerator } from "./scriptGenerator/index.js";
 import { HighlightDetector } from "./highlightDetector.js";
+import { AdLibrary } from "./adLibrary.js";
 import { RuntimeLog } from "./runtimeLog.js";
 import { Logger } from "./logger.js";
 
@@ -21,6 +22,8 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   const logger = new Logger({ runId: runDir });
   const scriptGen = new ScriptGenerator({ openai, logger });
   const highlightDet = new HighlightDetector();
+  const adLib = new AdLibrary();
+  const adUrl = voiceUrl.replace("/generate", "/enqueue_ad");
 
   let priorHalfInning = null;
 
@@ -30,9 +33,30 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   return {
     async onGumbo(gumbo) {
       const enriched = await gameState.enrich(gumbo);
-      await summary.refreshIfHalfInningEnded(priorHalfInning, { inning: enriched.inning, half: enriched.half });
-      halfInning.observe({ inning: enriched.inning, half: enriched.half });
-      priorHalfInning = { inning: enriched.inning, half: enriched.half };
+      const current = { inning: enriched.inning, half: enriched.half };
+      const halfInningEnded =
+        priorHalfInning !== null &&
+        (priorHalfInning.inning !== current.inning || priorHalfInning.half !== current.half);
+
+      await summary.refreshIfHalfInningEnded(priorHalfInning, current);
+      halfInning.observe(current);
+      priorHalfInning = current;
+
+      if (halfInningEnded) {
+        const ad = adLib.pickNext();
+        if (ad) {
+          try {
+            await fetch(adUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filename: ad }),
+            });
+            logger.info("ad_enqueued", { ad });
+          } catch (e) {
+            logger.error("ad_enqueue_failed", { reason: String(e) });
+          }
+        }
+      }
 
       const activeThreads = threads.observe(enriched);
       const verdict = highlightDet.classify(enriched);
