@@ -12,7 +12,7 @@ const GAME = {
   bases: { first: true, second: false, third: true },
   atBat: { name: 'M. Rodríguez', line: '2-for-4, HR' },
   pitching: 'D. Tanaka (87 P)',
-  announcers: 'Jim Powell & Sarah Diaz',
+  announcers: 'Pat Twinkle & Marty Doefiuger',
   field: 'Veritas Field',
   listeners: '12,847',
 };
@@ -284,7 +284,7 @@ function App() {
           </div>
 
           {/* Game state */}
-          <div className="game-state">
+          <div className="game-state" style={"display: none;"}>
             <Diamond bases={GAME.bases} />
             <CountDisplay balls={GAME.balls} strikes={GAME.strikes} outs={GAME.outs} />
             <div className="at-bat">
