@@ -1,14 +1,19 @@
 {
   "products": [
     {
-      "id": "hotdog_can",
-      "name": "HotDog-In-A-Can",
-      "pitch": "It's a hot dog. In a can. No bun. We thought of that."
+      "id": "the_calmer",
+      "name": "The Calmer",
+      "pitch": "A fist-sized rubberized device. It does nothing. You hold it."
     },
     {
-      "id": "thinking_cap",
-      "name": "Frosty's Thinking Cap",
-      "pitch": "For the modern gentleman who must think."
+      "id": "dad_spray",
+      "name": "Dad Spray",
+      "pitch": "An aerosol air freshener with the bouquet of a man who works on cars."
+    },
+    {
+      "id": "beef_plaque",
+      "name": "Beef Plaque",
+      "pitch": "A wall-mounted commemorative plaque, made entirely of beef. Mount it. Eat it. Mount another."
     }
   ]
 }
