@@ -14,6 +14,15 @@ The plan's parallel `lastHalfInningKey` state. Saw it would just shadow `priorHa
 
 ---
 
+## 2026-05-24 — Scenario YAML loader (Task 27)
+
+Added `src/scenarioLoader.js` (`loadScenario(path)`) — reads a YAML file from disk, parses it via the `yaml` npm package (v2.9.0), validates the two required top-level keys (`name`, `source`), returns the parsed object as-is. Tiny — 8 lines of impl, no schema enforcement beyond the two existence checks. The scenario file shape (source / bootstrap / demo blocks) is defined by example in the YAMLs themselves; downstream consumers (Task 28 runner) reach into the keys they need. 3 new tests (happy path, missing name, missing source); full suite 74/74.
+
+**What I tried and dropped**
+n/a — straight follow-the-plan; no scope creep.
+
+---
+
 ## 2026-05-23 — Ad rewrite: deadpan-absurd register (Task 24 redo)
 
 Threw out the first-pass ad assets and restarted both products and templates. The original 1940s-radio-announcer templates pushed gpt-5 into parody-of-parody mode — forced alliteration ("pantry pal with punch"), wordplay clusters ("skewer it, sizzle it, or snack it straight"), generic exhortations with no comedic specificity. New register: deadpan-absurd in the Tim Robinson / I Think You Should Leave / SNL fake-commercial mode. Replaced products with three sketch-bait premises: `the_calmer` (a fist-sized rubber device that does nothing), `dad_spray` (air freshener that smells like "a man who works on cars"), `beef_plaque` (a wall-mounted commemorative plaque made of beef). Replaced templates with three sketch formats: `confession` ([S1] interviews [S2] about their use of the product; [S2] reveals too much, matter-of-factly), `demo_booth` ([S1] salesperson never breaks pitch character while [S2] customer surfaces increasingly unsettling implications), `satisfied_customer` ([S2] testimonial whose sincere enthusiasm reveals progressively sadder life details; [S1] enters only on the final tag line). Each system prompt carries anti-cheese rules — no alliteration, no wordplay/puns, no exclamation points, no "wherever fine X are sold" cliches, no rhyming, mandatory concrete proper noun, 8-12 short lines, natural speech (not announcer voice). First batch on gpt-5: 9/9 land in the right tone, with `confession` and `satisfied_customer` strongest. `demo_booth` ends mid-conversation without a tag — the template didn't require one (intentionally ambiguous), so leaving as-is until we see how it plays in the broadcast. Old `data/ad_scripts/*.txt` artifacts deleted before regen; `.wav` files in `ads/` from the prior render were also cleared (gitignored, regenerated below).
