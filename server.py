@@ -280,11 +280,19 @@ def hls_segmenter_loop():
 
 @app.route("/")
 def root():
-    return send_from_directory(".", "hls_player.html")
+    return send_from_directory("web", "index.html")
+
+@app.route("/web/<path:filename>")
+def web_files(filename):
+    return send_from_directory("web", filename)
 
 @app.route("/hls/<path:filename>")
 def hls_files(filename):
     return send_from_directory("hls", filename)
+
+# TODO(SSE): add /events SSE endpoint that streams {balls,strikes,outs,runners}
+# to the frontend whenever the pipeline observes a state change.
+# Frontend element ids are in web/index.html with data-sse-* attributes.
 
 @app.route("/health")
 def health():

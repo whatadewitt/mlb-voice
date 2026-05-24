@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MLB rAIdio &middot; Live</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Audiowide&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+
+  <link rel="stylesheet" href="/web/style.css" />
+</head>
+<body>
+  <div class="app" data-style="pro">
+    <div class="bg"></div>
+    <div class="neon-sun"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark"><span class="ai">AI</span></div>
+        <div class="brand-name">MLB r<span class="ai-mono">AI</span>dio<span class="tagline">&middot; The game, on air</span></div>
+      </div>
+      <div class="topbar-right">
+        <span class="live-pill">
+          <span class="live-dot"></span>
+          On Air
+        </span>
+        <span>12,847 listening</span>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section class="broadcast-card" aria-label="Broadcast">
+        <div class="inning-strip">
+          <div class="inning-strip-left">
+            <span class="inning-num">Top 7th</span>
+            <span class="dot-sep"></span>
+            <span>Veritas Field</span>
+            <span class="dot-sep"></span>
+            <span>Game 132</span>
+          </div>
+          <div>Sat &middot; Aug 12 &middot; 7:08 PM ET</div>
+        </div>
+
+        <div class="scoreboard">
+          <div class="team away">
+            <div class="team-logo away" aria-hidden="true">BH</div>
+            <div class="team-meta">
+              <span class="team-city">Brooklyn</span>
+              <span class="team-name">Hawks</span>
+              <span class="team-record">74-58 &middot; away</span>
+            </div>
+          </div>
+
+          <div class="score-block" aria-label="Score 5 to 3">
+            <span>5</span>
+            <span class="dash">&mdash;</span>
+            <span>3</span>
+          </div>
+
+          <div class="team home">
+            <div class="team-logo home" aria-hidden="true">PK</div>
+            <div class="team-meta">
+              <span class="team-city">Portland</span>
+              <span class="team-name">Knights</span>
+              <span class="team-record">79-53 &middot; home</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TODO(SSE): push live data from server.py via Server-Sent Events; see TODO note in server.py /events route stub -->
+        <div class="game-state">
+          <div class="diamond" data-sse-runners="1,3">
+            <div class="base second" data-base="second"></div>
+            <div class="base third occupied" data-base="third"></div>
+            <div class="base first occupied" data-base="first"></div>
+            <div class="base home" data-base="home"></div>
+          </div>
+
+          <div class="count">
+            <div class="count-item">
+              <span class="count-label">B</span>
+              <span class="count-pips" data-sse-balls="2">
+                <span class="pip filled balls"></span>
+                <span class="pip filled balls"></span>
+                <span class="pip"></span>
+              </span>
+            </div>
+            <div class="count-item">
+              <span class="count-label">S</span>
+              <span class="count-pips" data-sse-strikes="1">
+                <span class="pip filled strikes"></span>
+                <span class="pip"></span>
+              </span>
+            </div>
+            <div class="count-item">
+              <span class="count-label">O</span>
+              <span class="count-pips" data-sse-outs="1">
+                <span class="pip filled outs"></span>
+                <span class="pip"></span>
+              </span>
+            </div>
+          </div>
+
+          <div class="at-bat">
+            <span class="label">At bat</span>
+            <span class="player">M. Rodr&iacute;guez</span>
+            <span class="line">2-for-4, HR &middot; vs. D. Tanaka (87 P)</span>
+          </div>
+        </div>
+        <!-- /TODO(SSE) -->
+
+        <div class="player">
+          <button id="play-btn" class="play-btn" aria-label="Play broadcast">
+            <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>
+            <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+          </button>
+
+          <div class="visualizer-wrap">
+            <div class="now-playing">
+              <span class="nb-label">On the call</span>
+              <span>Jim Powell &amp; Sarah Diaz &middot; BKH @ PTK</span>
+            </div>
+            <canvas id="viz" class="viz"></canvas>
+          </div>
+
+          <div class="volume-control">
+            <button id="vol-icon" class="vol-icon" aria-label="Mute">
+              <svg id="icon-vol-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 5L6 9H3v6h3l5 4V5z"/>
+                <path d="M15.5 8.5a5 5 0 010 7"/>
+                <path d="M18.5 5.5a9 9 0 010 13"/>
+              </svg>
+              <svg id="icon-vol-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                <path d="M11 5L6 9H3v6h3l5 4V5z"/>
+                <path d="M22 9l-6 6"/>
+                <path d="M16 9l6 6"/>
+              </svg>
+            </button>
+            <input id="vol-slider" class="vol-slider" type="range" min="0" max="1" step="0.01" value="0.7" aria-label="Volume" />
+          </div>
+
+          <audio id="audio" preload="none" crossorigin="anonymous"></audio>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>&copy; MLB rAIdio &middot; REDspace affiliate broadcasting network</span>
+      <span>Stream &middot; HLS &middot; 128 kbps</span>
+    </footer>
+  </div>
+
+  <script src="/web/app.js"></script>
+</body>
+</html>
