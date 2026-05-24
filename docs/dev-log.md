@@ -14,6 +14,15 @@ The plan's parallel `lastHalfInningKey` state. Saw it would just shadow `priorHa
 
 ---
 
+## 2026-05-24 — Scenario runner with fixture support (Task 28)
+
+Created `src/scenarios/run.js` (`runScenario(path)`) and `scenarios/standard_game.yaml`. The runner loads a YAML via `loadScenario`, opens an OpenAI client, builds a fresh pipeline against `logs/scenario_<name>_<ts>/`, then iterates plays from a saved GUMBO fixture (`source.game_json_fixture`) — for each play, it deep-clones the GUMBO, swaps `currentPlay` to the play at the target index, and calls `pipeline.onGumbo`, sleeping `3000/speed` ms between calls to give the broadcaster cadence room. Falls back to a clear error if a non-fixture source is requested (real GUMBO-stream sources arrive in Week 3 with user-curated games). One Windows-specific tweak from the plan's literal: replaced the `import.meta.url === \`file://${process.argv[1]}\`` CLI-entry check with `pathToFileURL(process.argv[1]).href` — Windows path separators (`\`) don't match `file://` URL semantics (`/`), so the plan's literal would never fire the CLI branch on this platform. End-to-end smoke against `SDatTOR.json` (regenerated at end-of-game timestamp for the full 86-play log) processed 5 plays cleanly: `HighlightDetector` correctly tiered Spencer Steer's double as `notable` while the surrounding singles/walks/popouts came back `routine`. Logs include a per-play `console.log` so demo runs are watchable. No new vitest tests — the runner is exercised by the actual scenario run.
+
+**What I tried and dropped**
+Original `SDatTOR.json` fetched by `fetch_fixture.mjs` at the default timestamp (`20250523_230027`) only contained 9 plays (very early in the game). Re-fetched at `20250524_020000` (just past midnight UTC, well into the game) to get 86 plays — enough for any scenario start_play_index up to ~80. Filename kept as-is per the plan even though the game is actually CHC@CIN (777811); renaming is deferred until user-curated games arrive in Week 3.
+
+---
+
 ## 2026-05-24 — Scenario YAML loader (Task 27)
 
 Added `src/scenarioLoader.js` (`loadScenario(path)`) — reads a YAML file from disk, parses it via the `yaml` npm package (v2.9.0), validates the two required top-level keys (`name`, `source`), returns the parsed object as-is. Tiny — 8 lines of impl, no schema enforcement beyond the two existence checks. The scenario file shape (source / bootstrap / demo blocks) is defined by example in the YAMLs themselves; downstream consumers (Task 28 runner) reach into the keys they need. 3 new tests (happy path, missing name, missing source); full suite 74/74.

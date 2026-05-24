@@ -1,0 +1,21 @@
+name: standard_game
+title: "Standard mid-inning play-by-play"
+description: |
+  Smoke fixture. Walks 5 plays from a saved GUMBO sample to verify the
+  scenario plumbing (loader → runner → pipeline → TTS). User-curated
+  source games replace this in Week 3.
+
+source:
+  game_json_fixture: SDatTOR.json
+  start_play_index: 5
+  stop_after_plays: 5
+  speed: 1.0
+
+bootstrap:
+  game_summary: "Mid-game; nothing yet."
+  pre_active_threads: []
+
+demo:
+  expect_classification: routine
+  what_to_listen_for: "No scoreboard re-reading. Threads ignored mostly."
+  expected_runtime_seconds: 90
