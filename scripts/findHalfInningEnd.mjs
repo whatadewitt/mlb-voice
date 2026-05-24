@@ -39,16 +39,16 @@ const allPlays = gumbo?.liveData?.plays?.allPlays || [];
 const thirdOutPlays = allPlays.filter((p) => p.count?.outs === 3);
 console.log(`${allPlays.length} plays total, ${thirdOutPlays.length} half-innings ended\n`);
 
-console.log("candidates (start of an at-bat that ended a half-inning):");
-console.log("─".repeat(110));
+console.log("candidates (start of the LAST pitch of a half-ending at-bat — ~1 LLM call before transition):");
+console.log("─".repeat(120));
 let printed = 0;
 for (const play of thirdOutPlays) {
-  const startIso = play.about?.startTime;
   const inning = play.about?.inning;
   const half = play.about?.halfInning;
+  const lastPitch = (play.playEvents || []).filter((e) => e.isPitch).slice(-1)[0];
+  const startIso = lastPitch?.startTime || play.about?.startTime;
   if (!startIso || !inning) continue;
   const gumboTs = toGumboTs(startIso);
-  // Find the actual timestamp at or after the at-bat start.
   const matching = timestamps.find((t) => t >= gumboTs);
   if (!matching) continue;
   const desc = (play.result?.description || "").slice(0, 60);
@@ -57,4 +57,4 @@ for (const play of thirdOutPlays) {
   if (printed >= count) break;
 }
 console.log("\nrun with:");
-console.log("  MLB_STARTING_TIMESTAMP=<one of the above> node gameScripting.js");
+console.log("  MLB_STARTING_TIMESTAMP=<one of the above> SPEED=10 node gameScripting.js");
