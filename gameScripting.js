@@ -13,6 +13,16 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const runDir = `logs/${GAME_ID}_${STARTING_TS}`;
 mkdirSync(runDir, { recursive: true });
 
+// Kick the server's HLS segmenter (idempotent — returns "already_running" if up).
+const startHlsUrl = VOICE_URL.replace("/generate", "/start_hls");
+try {
+  const r = await fetch(startHlsUrl, { method: "POST" });
+  const body = await r.json().catch(() => ({}));
+  console.log(`hls: ${body.status ?? `HTTP ${r.status}`}`);
+} catch (e) {
+  console.error(`hls kick failed (server unreachable?): ${e.message ?? e}`);
+}
+
 const pipeline = buildPipeline({ year: YEAR, runDir, openai, voiceUrl: VOICE_URL });
 const ticker = new GameTicker({
   gameId: GAME_ID,
