@@ -1,0 +1,20 @@
+name: go_ahead_homer
+title: "Go-Ahead Home Run"
+description: |
+  Late-and-close, runner on, trailing team takes the lead. Phase-1
+  placeholder against the existing fixture; user replaces source in Week 3
+  with a curated GUMBO clip that actually contains the go-ahead HR.
+
+source:
+  game_json_fixture: SDatTOR.json
+  start_play_index: 50
+  stop_after_plays: 4
+  speed: 1.0
+
+bootstrap:
+  game_summary: "Bottom 8, trailing 4-3, runner on, full-count."
+  pre_active_threads: [late_and_close, risp_jam]
+
+demo:
+  expect_classification: holy_shit
+  what_to_listen_for: "Sustained call, S2 disbelief, exit velocity surfaced"

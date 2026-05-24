@@ -14,6 +14,15 @@ The plan's parallel `lastHalfInningKey` state. Saw it would just shadow `priorHa
 
 ---
 
+## 2026-05-24 — demo wrapper + placeholder scenario YAMLs (Task 29)
+
+Created two placeholder scenario YAMLs (`go_ahead_homer.yaml` — late-and-close HR; `inning_break_into_ads.yaml` — half-inning ad flow) and the `scripts/demo.sh` one-keystroke wrapper. Both YAMLs point at the existing `SDatTOR.json` fixture with sample start indexes — they're explicit placeholders, marked as such in the description, and will be replaced with user-curated GUMBO clips in Week 3 once we have games that actually contain the scenarios. Added a `scripts/demo.ps1` PowerShell variant alongside `demo.sh` because the project's primary dev environment is Windows; the bash version requires git-bash or WSL, while the .ps1 runs natively. Both wrappers do the same flow: wipe `queue/` + HLS state for a clean start, launch `uv run python server.py` in the background with optional `TTS_BACKEND` override, poll `/health` until ready (max 30s), POST `/start_hls`, run `node src/scenarios/run.js <chosen-yaml>`, then wait on the server until Ctrl-C. The case statement accepts `standard | homer | ads` as short aliases.
+
+**What I tried and dropped**
+A pure-Flask "scenarios are loaded via the server" model — would have let the demo wrapper be HTTP-driven, but the runner already builds its own pipeline with its own runDir, so adding a server endpoint duplicates state for no real benefit. Kept the runner as a CLI tool the wrapper invokes directly.
+
+---
+
 ## 2026-05-24 — Scenario runner with fixture support (Task 28)
 
 Created `src/scenarios/run.js` (`runScenario(path)`) and `scenarios/standard_game.yaml`. The runner loads a YAML via `loadScenario`, opens an OpenAI client, builds a fresh pipeline against `logs/scenario_<name>_<ts>/`, then iterates plays from a saved GUMBO fixture (`source.game_json_fixture`) — for each play, it deep-clones the GUMBO, swaps `currentPlay` to the play at the target index, and calls `pipeline.onGumbo`, sleeping `3000/speed` ms between calls to give the broadcaster cadence room. Falls back to a clear error if a non-fixture source is requested (real GUMBO-stream sources arrive in Week 3 with user-curated games). One Windows-specific tweak from the plan's literal: replaced the `import.meta.url === \`file://${process.argv[1]}\`` CLI-entry check with `pathToFileURL(process.argv[1]).href` — Windows path separators (`\`) don't match `file://` URL semantics (`/`), so the plan's literal would never fire the CLI branch on this platform. End-to-end smoke against `SDatTOR.json` (regenerated at end-of-game timestamp for the full 86-play log) processed 5 plays cleanly: `HighlightDetector` correctly tiered Spencer Steer's double as `notable` while the surrounding singles/walks/popouts came back `routine`. Logs include a per-play `console.log` so demo runs are watchable. No new vitest tests — the runner is exercised by the actual scenario run.

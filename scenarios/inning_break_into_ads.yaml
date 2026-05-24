@@ -1,0 +1,20 @@
+name: inning_break_into_ads
+title: "Inning end → ad → next inning"
+description: |
+  Demos the half-inning ad flow. Walks past a half-inning boundary so the
+  AdLibrary trigger fires and a sponsored break plays before the next
+  half resumes.
+
+source:
+  game_json_fixture: SDatTOR.json
+  start_play_index: 30
+  stop_after_plays: 6
+  speed: 1.0
+
+bootstrap:
+  game_summary: "Tied at 3 in the middle innings."
+  pre_active_threads: []
+
+demo:
+  expect_classification: notable
+  what_to_listen_for: "Ad fires after the third out; broadcast resumes top of next half-inning."
