@@ -58,22 +58,70 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         abbreviation: raw.abbreviation,
         record: raw.record ? { wins: raw.record.wins, losses: raw.record.losses } : null,
       } : null;
-      // Boxscore is keyed `ID<mlbam>` under either team; walk both sides.
-      const playerStats = (id) => {
-        if (!id) return null;
-        const teams = gumbo?.liveData?.boxscore?.teams ?? {};
-        for (const side of ["home", "away"]) {
-          const entry = teams[side]?.players?.[`ID${id}`];
-          if (entry) return entry.stats ?? null;
+      // Progressive game state — saved GUMBOs are end-of-game snapshots, so
+      // linescore/boxscore reflect the FINAL score and totals. For accurate
+      // mid-game display we have to walk allPlays up to currentPlay's
+      // atBatIndex and reconstruct what was true at this moment.
+      const allPlays = gumbo?.liveData?.plays?.allPlays ?? [];
+      const cp = gumbo?.liveData?.plays?.currentPlay;
+      const currentAtBatIndex = cp?.about?.atBatIndex;
+      const HIT_EVENTS = new Set(["single", "double", "triple", "home_run"]);
+      const NON_AB_EVENTS = new Set([
+        "walk", "intent_walk", "intentional_walk", "hit_by_pitch",
+        "sac_fly", "sac_bunt", "sac_fly_double_play",
+        "sacrifice_bunt_double_play", "catcher_interf",
+      ]);
+      // Score: AFTER the current play resolves (matches what a TV broadcast
+      // would show). Fall back to the most recent prior play if the current
+      // one has no result yet.
+      let progScoreHome = 0, progScoreAway = 0;
+      if (cp?.result?.homeScore != null && cp?.result?.awayScore != null) {
+        progScoreHome = cp.result.homeScore;
+        progScoreAway = cp.result.awayScore;
+      } else {
+        for (let i = allPlays.length - 1; i >= 0; i--) {
+          const p = allPlays[i];
+          if (p.about?.atBatIndex == null || p.about.atBatIndex >= (currentAtBatIndex ?? Infinity)) continue;
+          if (p.result?.homeScore != null && p.result?.awayScore != null) {
+            progScoreHome = p.result.homeScore;
+            progScoreAway = p.result.awayScore;
+            break;
+          }
         }
-        return null;
+      }
+      // Batter line BEFORE this PA — what TV captions show when the camera
+      // pans to the batter starting the at-bat. Walks/HBP/sacs are PAs but
+      // not at-bats and don't count toward "X-for-Y".
+      const batterLineBefore = (batterId) => {
+        if (!batterId || currentAtBatIndex == null) return null;
+        let ab = 0, hits = 0, hr = 0;
+        for (const p of allPlays) {
+          if (p.about?.atBatIndex == null || p.about.atBatIndex >= currentAtBatIndex) continue;
+          if (p.matchup?.batter?.id !== batterId) continue;
+          const evt = p.result?.eventType;
+          if (!evt || NON_AB_EVENTS.has(evt)) continue;
+          ab++;
+          if (HIT_EVENTS.has(evt)) hits++;
+          if (evt === "home_run") hr++;
+        }
+        if (ab === 0 && hits === 0) return null;  // first PA: nothing to show yet
+        return `${hits}-for-${ab}${hr > 0 ? ", HR" : ""}`;
       };
-      const batStats = playerStats(enriched.batter?.id)?.batting ?? {};
-      const pitStats = playerStats(enriched.pitcher?.id)?.pitching ?? {};
-      const batterLine = batStats.atBats != null
-        ? `${batStats.hits ?? 0}-for-${batStats.atBats}${batStats.homeRuns > 0 ? ", HR" : ""}`
-        : null;
-      const pitcherPitches = pitStats.numberOfPitches ?? pitStats.pitchesThrown ?? null;
+      // Pitcher pitches: count all pitch events through current play (the
+      // pitcher's count goes up with each pitch they throw, including those
+      // already in the current PA).
+      const pitcherPitchesThrough = (pitcherId) => {
+        if (!pitcherId || currentAtBatIndex == null) return null;
+        let n = 0;
+        for (const p of allPlays) {
+          if (p.about?.atBatIndex == null || p.about.atBatIndex > currentAtBatIndex) continue;
+          if (p.matchup?.pitcher?.id !== pitcherId) continue;
+          for (const ev of p.playEvents || []) if (ev.isPitch) n++;
+        }
+        return n > 0 ? n : null;
+      };
+      const batterLine = batterLineBefore(enriched.batter?.id);
+      const pitcherPitches = pitcherPitchesThrough(enriched.pitcher?.id);
       const statePayload = {
         balls: enriched.balls,
         strikes: enriched.strikes,
@@ -85,7 +133,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         batter_line: batterLine,
         pitcher: enriched.pitcher?.name ?? "",
         pitcher_pitches: pitcherPitches,
-        score: enriched.score,
+        score: { ...enriched.score, home: progScoreHome, away: progScoreAway },
         teams: {
           home: teamMeta(gumbo?.gameData?.teams?.home),
           away: teamMeta(gumbo?.gameData?.teams?.away),
