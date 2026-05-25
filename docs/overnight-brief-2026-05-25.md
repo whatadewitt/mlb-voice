@@ -68,8 +68,9 @@ Listen for:
   "Strike two, looking", "Foul, into the seats."
 - The PA still wraps with the existing result call: "And De La Cruz
   singles to left, runner to third."
-- On walks and strikeouts: you'll hear BOTH the per-pitch call on the
-  resolving pitch AND the PA result. See "Open questions" below.
+- On walks and strikeouts: the resolving pitch is now silent (its call
+  is folded into the PA result line — "Stephenson walks" instead of
+  "Ball four" + "Stephenson walks").
 
 A/B comparison: run with `$env:PER_PITCH=$null` then again with `="1"`
 on the same scenario YAML to feel the cadence difference.
@@ -85,15 +86,14 @@ re-verify the SSE state pushes haven't regressed.
 
 ## Open questions for you
 
-1. **Walks and strikeouts in PER_PITCH mode duplicate.** A walk has no
-   "In play" terminating event — the 4th ball just resolves the PA. So
-   the resolving pitch fires *both* a per-pitch call ("Ball four, high")
-   *and* the PA result ("Stephenson walks"). Same for strikeouts. This
-   is mild — they're both real broadcast lines — but it does mean a
-   half-beat of duplication. Fixable by peeking at the next play's
-   `atBatIndex` (or trusting `result.eventType`) to skip the final pitch
-   call on non-contact PAs. Do you want me to wire that up, or is the
-   slight duplication actually fine on first listen?
+1. ~~**Walks and strikeouts in PER_PITCH mode duplicate.**~~ **Fixed
+   2026-05-25** in a followup commit. `buildPitchInput` now detects
+   non-contact PA resolutions (walk / intent_walk / strikeout /
+   strikeout_double_play / strikeout_triple_play / hit_by_pitch) and
+   skips the last `isPitch=true` event in that play, handing the call
+   off to the PA-level result. Smoke-confirmed against the Stephenson
+   walk in the standard scenario (per-pitch count went from 10 → 9).
+   5 new tests; full suite 98/98.
 
 2. **Tier rule strictness.** Fix 2 makes [S2] OPTIONAL on routine
    pitches but leaves it to the model's judgment. The model may still
@@ -144,7 +144,7 @@ unit tests; the audible polish pass is yours.
 | Suite                                 | Before | After |
 | ------------------------------------- | ------ | ----- |
 | `src/scriptGenerator/index.test.js`   | 6      | 11    |
-| `src/scriptGenerator/perPitch.test.js`| (new)  | 9     |
+| `src/scriptGenerator/perPitch.test.js`| (new)  | 14    |
 | `src/pipeline.test.js`                | (new)  | 5     |
 | All other suites                      | 68     | 68    |
-| **Total**                             | **74** | **93**|
+| **Total**                             | **74** | **98**|

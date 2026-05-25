@@ -26,12 +26,11 @@ in place for a release or two so we can see what's recently shipped.
   intentionally filtered — its call belongs to the PA result.
   - Toggle: `$env:PER_PITCH="1"` (PowerShell) or `PER_PITCH=1` (bash).
   - Pacing knob: `PER_PITCH_SLEEP_MS=N` (default 1200ms between pitches).
-  - Known limitation: walks and strikeouts have no "In play" terminator,
-    so the resolving pitch fires both a per-pitch call ("Ball four,
-    high") AND the PA result ("Stephenson walks") — slight duplication.
-    If it feels bad in audio, suppress the per-pitch call on the final
-    pitch of a walk/strikeout (look at the next play's `about.atBatIndex`
-    to know if this was the last pitch).
+  - Resolved 2026-05-25: walks / strikeouts / HBP now skip their
+    resolving pitch in the per-pitch path (keyed on
+    `result.eventType` + last-pitch detection in `buildPitchInput`).
+    The PA-level call carries the "Stephenson walks" / "strikes out
+    swinging" line on its own.
 
 - [ ] **Verify per-line elevenlabs emit feels snappier.** Code shipped
   2026-05-24. With a multi-line broadcast script, line 1 audio should

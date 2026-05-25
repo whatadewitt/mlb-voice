@@ -5,6 +5,16 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-25 — PER_PITCH: skip resolving pitch on walks / Ks / HBP (branch: 11labs-migration)
+
+Followup to the PER_PITCH ship from earlier this morning. The known limitation called out in `docs/demo-polish.md` was that walks and strikeouts have no "In play, ..." terminating event, so the existing per-pitch filter missed the resolving pitch and the listener got both "Ball four, high" and "Stephenson walks" stacked back-to-back. Same for K3 and HBP.
+
+Extended `buildPitchInput` in `src/scriptGenerator/perPitch.js` with a `NON_CONTACT_RESOLUTIONS` set (`walk`, `intent_walk`, `intentional_walk`, `strikeout`, `strikeout_double_play`, `strikeout_triple_play`, `hit_by_pitch`) and a tiny `lastPitchIndex(events)` helper. When the play's `result.eventType` is in the set AND the current event is the last `isPitch=true` event in `playEvents`, return null — same code path as the existing "In play" filter, just keyed on `eventType` rather than the call string. The PA-level `onGumbo` call still fires the resolving call ("Stephenson walks," "strikes out swinging") on its own.
+
+Why I keyed on `eventType` rather than guessing from the call string ("Ball" + count is 4): the call string is the same for every ball in the PA — only the surrounding context (this is the last pitch AND the PA resolves as a walk) tells you it's terminal. `eventType` is the canonical signal from MLB and is already populated on the play.result by the time the scenario runner sees it. 5 new tests cover walk, K, HBP, mid-PA pitches preserved, and the contact-play guardrail (an "In play" terminator on a single shouldn't accidentally double-filter the pitch before it). Smoke confirmed against the Stephenson walk in `SDatTOR.json` (play 8): per-pitch count dropped from 10 → 9, with event_idx 11 (the 4th ball) now correctly omitted. Full suite 98/98.
+
+---
+
 ## 2026-05-25 — Pitch-by-pitch broadcast mode (PER_PITCH flag) (branch: 11labs-migration)
 
 A `playEvents` array inside one `allPlays` entry typically contains 3–10 individual pitch events (ball, called strike, foul, in-play). The existing pipeline collapses the entire PA into a single broadcaster call — "Stephenson walks" or "Steer doubles to left" — and never gives the listener the live cadence of a real broadcast where each pitch gets called as it happens. PER_PITCH mode adds that cadence behind a feature flag, default OFF.

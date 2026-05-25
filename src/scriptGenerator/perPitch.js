@@ -17,6 +17,24 @@ function roundVelo(v) {
   return Math.round(Number(v));
 }
 
+// PAs that don't end with an "In play, ..." event still have a resolving pitch
+// (ball-4 for a walk, strike-3 for a K, the contact-with-batter pitch for HBP).
+// Without this set the per-pitch path would call ball-4 *and* the PA-level
+// result would say "X walks." Skip the resolving pitch on these and let the PA
+// result carry the call.
+const NON_CONTACT_RESOLUTIONS = new Set([
+  "walk", "intent_walk", "intentional_walk",
+  "strikeout", "strikeout_double_play", "strikeout_triple_play",
+  "hit_by_pitch",
+]);
+
+function lastPitchIndex(events) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.isPitch) return i;
+  }
+  return -1;
+}
+
 // Build the per-pitch prompt input from a raw GUMBO play + the event index.
 // Returns null when the event isn't a callable pitch (skip pickoffs, mound
 // visits, etc.). Callers use the null return as a signal to skip.
@@ -27,6 +45,13 @@ export function buildPitchInput(currentPlay, eventIdx) {
   // The terminating pitch ("In play, ...") is owned by the PA-level result
   // call, not this per-pitch path; bail and let onGumbo handle it.
   if (/^in play/i.test(call)) return null;
+  // Walks / strikeouts / HBP resolve on a regular pitch event (not "In play"),
+  // so the existing filter misses them. If this IS the last pitch and the PA
+  // resolves via one of those events, hand it to the PA-level call.
+  const eventType = currentPlay?.result?.eventType;
+  if (NON_CONTACT_RESOLUTIONS.has(eventType) && eventIdx === lastPitchIndex(currentPlay.playEvents ?? [])) {
+    return null;
+  }
   return {
     call,
     pitch_type: ev.details?.type?.description || null,

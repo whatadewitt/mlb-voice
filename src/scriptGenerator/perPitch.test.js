@@ -54,6 +54,70 @@ describe("buildPitchInput", () => {
     expect(input.pitch_type).toBe("Four-Seam Fastball");
     expect(input.count_after).toEqual({ balls: 1, strikes: 0 });
   });
+
+  // The PA-resolving pitch of a walk / K / HBP doesn't carry an "In play"
+  // marker, so it needs its own filter — otherwise we get "Ball four, high"
+  // AND "Stephenson walks" stacked on top of each other.
+  const walkPlay = () => ({
+    result: { eventType: "walk", description: "Tyler Stephenson walks." },
+    playEvents: [
+      { isPitch: true, count: { balls: 1, strikes: 0 }, details: { call: { description: "Ball" } }, pitchData: { startSpeed: 92.0 } },
+      { isPitch: true, count: { balls: 2, strikes: 0 }, details: { call: { description: "Ball" } }, pitchData: { startSpeed: 93.0 } },
+      { isPitch: true, count: { balls: 3, strikes: 0 }, details: { call: { description: "Ball" } }, pitchData: { startSpeed: 94.0 } },
+      { isPitch: true, count: { balls: 4, strikes: 0 }, details: { call: { description: "Ball" } }, pitchData: { startSpeed: 91.0 } },
+    ],
+  });
+
+  it("returns null for the final ball of a walk (PA-result owns it)", () => {
+    expect(buildPitchInput(walkPlay(), 3)).toBeNull();
+  });
+
+  it("still returns the earlier balls of a walk PA", () => {
+    expect(buildPitchInput(walkPlay(), 0)).not.toBeNull();
+    expect(buildPitchInput(walkPlay(), 1)).not.toBeNull();
+    expect(buildPitchInput(walkPlay(), 2)).not.toBeNull();
+  });
+
+  it("returns null for the final strike of a strikeout (PA-result owns it)", () => {
+    const kPlay = {
+      result: { eventType: "strikeout", description: "Ian Happ strikes out swinging." },
+      playEvents: [
+        { isPitch: true, count: { balls: 0, strikes: 1 }, details: { call: { description: "Called Strike" } }, pitchData: { startSpeed: 99.2 } },
+        { isPitch: true, count: { balls: 0, strikes: 2 }, details: { call: { description: "Foul" } }, pitchData: { startSpeed: 100.0 } },
+        { isPitch: true, count: { balls: 0, strikes: 3 }, details: { call: { description: "Swinging Strike" } }, pitchData: { startSpeed: 89.7 } },
+      ],
+    };
+    expect(buildPitchInput(kPlay, 2)).toBeNull();
+    expect(buildPitchInput(kPlay, 0)).not.toBeNull();
+    expect(buildPitchInput(kPlay, 1)).not.toBeNull();
+  });
+
+  it("returns null for the HBP pitch (PA-result owns it)", () => {
+    const hbpPlay = {
+      result: { eventType: "hit_by_pitch", description: "Joe Smith hit by pitch." },
+      playEvents: [
+        { isPitch: true, count: { balls: 1, strikes: 0 }, details: { call: { description: "Ball" } }, pitchData: { startSpeed: 92.0 } },
+        { isPitch: true, count: { balls: 1, strikes: 0 }, details: { call: { description: "Hit By Pitch" } }, pitchData: { startSpeed: 91.0 } },
+      ],
+    };
+    expect(buildPitchInput(hbpPlay, 1)).toBeNull();
+    expect(buildPitchInput(hbpPlay, 0)).not.toBeNull();
+  });
+
+  it("does NOT filter the final pitch when the PA is a contact play", () => {
+    // Contact plays already terminate on an "In play" event which is filtered
+    // elsewhere; we shouldn't accidentally double-filter the second-to-last
+    // pitch of a single/double/etc.
+    const singlePlay = {
+      result: { eventType: "single", description: "X singles to left." },
+      playEvents: [
+        { isPitch: true, count: { balls: 0, strikes: 1 }, details: { call: { description: "Called Strike" } }, pitchData: { startSpeed: 92.0 } },
+        { isPitch: true, count: { balls: 0, strikes: 1 }, details: { call: { description: "In play, no out" } }, pitchData: { startSpeed: 88.0 } },
+      ],
+    };
+    expect(buildPitchInput(singlePlay, 0)).not.toBeNull(); // the called strike survives
+    expect(buildPitchInput(singlePlay, 1)).toBeNull();     // "In play" still filtered
+  });
 });
 
 describe("buildPerPitchMessages", () => {
