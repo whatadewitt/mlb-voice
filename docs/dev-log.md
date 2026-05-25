@@ -5,6 +5,16 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-25 — Tier-aware color analyst, quieter on routine pitches (branch: 11labs-migration)
+
+The color guy ([S2]) was chiming in on every call, including routine balls and strikes — turns a 6-second ball-one into a 10-second mini-discussion that nobody asked for and that makes the broadcast feel relentlessly busy. Real broadcasts have the color analyst lay out for most pitches and step in on contact, big counts, or notable plays.
+
+The old system prompt forced alternation hard: "Format every line with a speaker tag. Alternate speakers, ALWAYS end with the OPPOSITE empty tag." Softened to "Default to alternating ... see the tier-specific guidance below for exceptions on routine plays," and added a new `TIER_DIRECTIVE` block keyed on `highlight.classification` — for `routine`, [S2] is OPTIONAL and should usually stay quiet, [S1] solo is allowed; for `notable` / `highlight` / `holy_shit`, both voices are required and the original alternation rule reapplies. The tier-specific rule is appended to the system prompt on every call so the LLM sees both the vibe directive and the participation rule together.
+
+Why prompt-only and not a code-side filter that strips [S2] lines after the fact: filtering post-hoc would mangle scripts where the LLM has legitimately built up a back-and-forth on a notable play that briefly opens with a routine pitch in the middle. Letting the model self-regulate from tier context preserves the option for [S2] to chime in even on routine pitches when there's something genuinely worth saying. 2 new tests assert the routine prompt contains "OPTIONAL" and the highlight prompt does not; full suite 78/78.
+
+---
+
 ## 2026-05-24 — Batter intros on new at-bat (branch: 11labs-migration)
 
 Booth was jumping straight into the live call on every play, including the first pitch of a new at-bat. Real broadcasts open the at-bat with a brief intro — batter name, today's line — then transition into the live call. Added an `is_new_batter` signal that the script prompt opts into.

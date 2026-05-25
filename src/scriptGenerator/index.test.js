@@ -104,4 +104,28 @@ describe("ScriptGenerator", () => {
     const user = create.mock.calls[0][0].messages[1].content;
     expect(user).not.toContain("is_new_batter");
   });
+
+  it("routine-tier system prompt marks [S2] OPTIONAL", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Ball one. [S2]" } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } } });
+    await gen.generate(baseInputs());
+    const system = create.mock.calls[0][0].messages[0].content;
+    expect(system).toMatch(/Tier guidance \(routine\)/);
+    expect(system).toMatch(/OPTIONAL/);
+  });
+
+  it("highlight-tier system prompt requires both voices (no OPTIONAL)", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Gone! [S2] Wow." } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } } });
+    await gen.generate(baseInputs({
+      highlight: { classification: "highlight", stats_to_mention: [], vibe: "big_moment" },
+    }));
+    const system = create.mock.calls[0][0].messages[0].content;
+    expect(system).toMatch(/Tier guidance \(highlight\)/);
+    expect(system).not.toMatch(/OPTIONAL/);
+  });
 });

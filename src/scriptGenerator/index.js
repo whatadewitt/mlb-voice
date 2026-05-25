@@ -7,10 +7,20 @@ const VIBE_DIRECTIVE = {
   explosive: "This is a holy-shit moment. Sustained call, dramatic pause, S2 disbelief, full stat dump where natural.",
 };
 
+// Tier-specific guidance on whether [S2] (color) must participate. On routine
+// pitches the color guy was chiming in on every call and grew tiresome; he now
+// stays quiet by default and only speaks up on notable+ plays.
+const TIER_DIRECTIVE = {
+  routine: "Routine pitch — [S1] carries it solo by default. [S2] is OPTIONAL and should usually stay quiet; only chime in if there's something genuinely worth saying. A single [S1] line ending with an empty [S2] tag is fine.",
+  notable: "Notable play — alternate speakers and end with the OPPOSITE empty tag. [S2] adds color or reaction.",
+  highlight: "Highlight — alternate speakers and end with the OPPOSITE empty tag. [S2] reacts with weight; the moment deserves both voices.",
+  holy_shit: "Holy-shit moment — both voices required, alternate, end with the OPPOSITE empty tag. Sustained call, [S2] disbelief.",
+};
+
 const SYSTEM_PROMPT_BASE = `You are a two-person baseball broadcast booth.
 - [S1] is the play-by-play analyst (urgent, fluid).
 - [S2] is the color analyst (insight, personality, opinion).
-Format every line with a speaker tag. Alternate speakers, ALWAYS end with the OPPOSITE empty tag (e.g., last line "[S1]..." → final tag "[S2]").
+Format every line with a speaker tag. Default to alternating speakers and ending with the OPPOSITE empty tag (e.g., last line "[S1]..." → final tag "[S2]") — see the tier-specific guidance below for exceptions on routine plays.
 Speech style: never spell out units (say "miles per hour", not "M P H"). Skip velocity if it would interrupt flow.
 Length: typical play 8–14 seconds; HRs and walk-offs may run longer.
 
@@ -25,7 +35,8 @@ function buildMessages(inp) {
   const { enriched, threads, highlight, gameSummaryProse, halfInningMemoryScripts, cooldownByThreadId, cooldownByEventId, isNewBatter, batterLine } = inp;
 
   const vibe = VIBE_DIRECTIVE[highlight.vibe] ?? VIBE_DIRECTIVE.calm;
-  const systemContent = `${SYSTEM_PROMPT_BASE}\nVibe directive: ${vibe}`;
+  const tierRule = TIER_DIRECTIVE[highlight.classification] ?? TIER_DIRECTIVE.routine;
+  const systemContent = `${SYSTEM_PROMPT_BASE}\nVibe directive: ${vibe}\nTier guidance (${highlight.classification}): ${tierRule}`;
 
   const stateFields = pickStateFields(enriched, { stats_to_mention: highlight.stats_to_mention });
   const stateBlockLines = Object.entries(stateFields)
