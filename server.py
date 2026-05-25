@@ -264,34 +264,76 @@ def _eleven_tts_pcm(voice_id: str, text: str, api_key: str) -> bytes:
         raise RuntimeError(f"elevenlabs TTS failed {r.status_code}: {r.text[:300]}")
     return r.content
 
-def tts_elevenlabs(text: str, voice_set: str, out_path: str) -> None:
-    """Parse [S1]/[S2] script, fetch PCM per line from ElevenLabs with the right
-    voice, concatenate (with a short silence between lines) into a 24kHz mono WAV."""
+def _write_wav_pcm(pcm: bytes, path: str) -> None:
+    """Atomic write: PCM bytes -> 24kHz mono 16-bit WAV via tmp+rename."""
+    tmp = path + ".part"
+    with wave.open(tmp, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(ELEVEN_SAMPLE_RATE)
+        wf.writeframes(pcm)
+    os.rename(tmp, path)
+
+def tts_elevenlabs(text: str, voice_set: str, out_path: str):
+    """Parse [S1]/[S2] script and synth via ElevenLabs.
+
+    broadcaster: per-line emit — write each line's WAV to queue/ as soon as
+      its API call returns, so the HLS segmenter can start playing line 1
+      while we're still generating line 2+. Returns list of written paths.
+
+    ad_announcer (or anything else): legacy concat path — one WAV at
+      out_path with 120ms gaps. Returns None. scripts/renderAds.js relies
+      on this single-file output.
+    """
     api_key = os.environ.get("ELEVEN_LABS_API_KEY")
     if not api_key:
         raise RuntimeError("ELEVEN_LABS_API_KEY not set")
     voice_map = ELEVEN_VOICE_REQUEST.get(voice_set) or ELEVEN_VOICE_REQUEST["broadcaster"]
     lines = _split_script_by_speaker(text)
     if not lines:
-        # No speaker tags — treat the whole text as a single S1 line.
         lines = [("S1", text.strip())]
-    # 120ms silence between lines for natural cadence (2 bytes * 24000 hz * 0.12s = 5760 bytes).
-    gap = b"\x00" * int(ELEVEN_SAMPLE_RATE * 0.12) * 2
-    pcm_chunks: list[bytes] = []
+
+    if voice_set == "ad_announcer":
+        gap = b"\x00" * int(ELEVEN_SAMPLE_RATE * 0.12) * 2
+        pcm_chunks: list[bytes] = []
+        for i, (speaker, line) in enumerate(lines):
+            voice_name = voice_map.get(speaker) or voice_map["S1"]
+            vid = _resolve_elevenlabs_voice_id(voice_name, api_key)
+            pcm = _eleven_tts_pcm(vid, line, api_key)
+            if i > 0:
+                pcm_chunks.append(gap)
+            pcm_chunks.append(pcm)
+        audio = b"".join(pcm_chunks)
+        with wave.open(out_path, "wb") as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(ELEVEN_SAMPLE_RATE)
+            wf.writeframes(audio)
+        log.info(f"tts_elevenlabs[concat] voice_set={voice_set} lines={len(lines)} bytes={len(audio)}")
+        return None
+
+    # Per-line emit. out_path is queue/play-<ts>.wav.part; strip suffixes to
+    # get a base, then suffix with -NN for each line. Filenames sort in the
+    # right order because <ts> is fixed per /generate call and NN increments.
+    base = out_path
+    if base.endswith(".part"): base = base[:-5]
+    if base.endswith(".wav"): base = base[:-4]
+    written: list[str] = []
     for i, (speaker, line) in enumerate(lines):
         voice_name = voice_map.get(speaker) or voice_map["S1"]
         vid = _resolve_elevenlabs_voice_id(voice_name, api_key)
-        pcm = _eleven_tts_pcm(vid, line, api_key)
-        if i > 0:
-            pcm_chunks.append(gap)
-        pcm_chunks.append(pcm)
-    audio = b"".join(pcm_chunks)
-    with wave.open(out_path, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit
-        wf.setframerate(ELEVEN_SAMPLE_RATE)
-        wf.writeframes(audio)
-    log.info(f"tts_elevenlabs voice_set={voice_set} lines={len(lines)} bytes={len(audio)}")
+        try:
+            pcm = _eleven_tts_pcm(vid, line, api_key)
+        except Exception:
+            # Per-line failure shouldn't kill the whole script — the broadcast
+            # plays what we have so far, the demo flows.
+            log.exception(f"tts_elevenlabs line {i+1}/{len(lines)} failed; skipping")
+            continue
+        final_path = f"{base}-{i:02d}.wav"
+        _write_wav_pcm(pcm, final_path)
+        written.append(final_path)
+        log.info(f"tts_elevenlabs line {i+1}/{len(lines)} bytes={len(pcm)} -> {final_path}")
+    if not written:
+        raise RuntimeError("tts_elevenlabs produced no lines")
+    return written
 
 def _warmup_elevenlabs() -> None:
     """Pre-resolve voice IDs so the first /generate doesn't pay the lookup cost."""
@@ -310,11 +352,14 @@ def _warmup_elevenlabs() -> None:
 
 TTS_BACKENDS = {"stub": tts_stub, "openai": tts_openai, "dia2": tts_dia2, "elevenlabs": tts_elevenlabs}
 
-def run_tts(text: str, voice_set: str, out_path: str) -> None:
+def run_tts(text: str, voice_set: str, out_path: str):
+    """Returns whatever the backend returns. Single-file backends (stub,
+    openai, dia2, elevenlabs+ad_announcer) implicitly return None; the
+    elevenlabs broadcaster path returns a list of per-line WAV paths."""
     fn = TTS_BACKENDS.get(TTS_BACKEND)
     if not fn:
         raise ValueError(f"Unknown TTS_BACKEND={TTS_BACKEND}")
-    fn(text, voice_set, out_path)
+    return fn(text, voice_set, out_path)
 
 # ---------- HLS segmenter ----------
 
@@ -503,12 +548,26 @@ def generate():
     log.info(f"/generate begin text_len={len(text)} voice={voice_set} backend={TTS_BACKEND}")
     t0 = time.time()
     try:
-        run_tts(text, voice_set, tmp_path)
+        result = run_tts(text, voice_set, tmp_path)
     except Exception:
         log.exception("/generate run_tts failed")
-        try: os.remove(tmp_path)
-        except OSError: pass
+        for stray in (tmp_path, out_path):
+            try: os.remove(stray)
+            except OSError: pass
         return jsonify({"error": "tts_failed"}), 500
+
+    if isinstance(result, list):
+        # Backend already wrote per-line WAVs straight to queue/ (elevenlabs
+        # broadcaster). tmp_path was never used; clean it up if anything left
+        # a stray .part file.
+        if os.path.exists(tmp_path):
+            try: os.remove(tmp_path)
+            except OSError: pass
+        total_bytes = sum(os.path.getsize(p) for p in result if os.path.exists(p))
+        total_dur = sum(_wav_seconds(p) for p in result)
+        log.info(f"/generate ok lines={len(result)} total_bytes={total_bytes} total_dur={total_dur:.2f}s elapsed={time.time()-t0:.2f}s")
+        return jsonify({"status": "queued", "files": result, "lines": len(result)})
+
     os.rename(tmp_path, out_path)
     size = os.path.getsize(out_path)
     dur = _wav_seconds(out_path)

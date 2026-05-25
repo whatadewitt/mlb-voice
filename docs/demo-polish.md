@@ -18,6 +18,14 @@ in place for a release or two so we can see what's recently shipped.
   since the wav queue lags). DevTools → Network → `events` should show
   `data:` frames per play and `: heartbeat` lines every ~15s when idle.
 
+- [ ] **Verify per-line elevenlabs emit feels snappier.** Code shipped
+  2026-05-24. With a multi-line broadcast script, line 1 audio should
+  start playing ~2s earlier than the previous concat-then-emit path.
+  Also listen for any awkward back-to-back line transitions — the 120ms
+  inter-line silence pad was dropped on the broadcaster path; if it
+  feels too cramped, easy to add back as a tiny silence WAV between
+  lines.
+
 ## Recently shipped
 
 - [x] ~~**SSE: push live ball/strike/outs/runners to the frontend.**~~

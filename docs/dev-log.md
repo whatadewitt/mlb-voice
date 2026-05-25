@@ -5,6 +5,19 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-24 — Per-line emit for elevenlabs broadcaster (branch: 11labs-migration)
+
+Followup to the elevenlabs switch: `tts_elevenlabs` no longer concatenates every line of a script into one WAV before dropping it in `queue/`. For `voice_set="broadcaster"` it now writes each line as its own WAV (`play-<ts>-00.wav`, `-01.wav`, …) directly into `queue/` as soon as that line's API call returns, then returns the list of paths so the `/generate` handler can respond `{files, lines}` instead of the legacy `{file}`. Filenames sort in playback order because `<ts>` is fixed per `/generate` call and `NN` increments. `voice_set="ad_announcer"` still concatenates into a single file at `out_path` (scripts/renderAds.js copies it into `ads/<id>.wav` and would break on multi-file output), returning `None`. The `/generate` handler distinguishes by checking `isinstance(result, list)`; if so it skips the `tmp_path → out_path` rename (the backend already wrote final names directly) and cleans up any stray `.part` left behind. Per-line failure is now non-fatal — if line 3 of 5 fails, the broadcast plays 1–2 and 4–5 with a cut in the middle, rather than dropping the whole script.
+
+Latency: smoke run of a 3-line broadcaster script took 3.08s of wall time total, but line 1 (2.32s of audio) landed in `queue/` at ~1s — vs the old concat path where nothing reached `queue/` until 3s+. So the HLS segmenter can start segmenting + the player can start buffering ~2s earlier per script. Bigger absolute win on longer "big moment" scripts where the prior wait scaled with total line count.
+
+One thing I deliberately dropped: the 120ms silence pad between lines, on the broadcaster path. Each line lands as its own WAV and the segmenter introduces natural gaps via its 2s loop interval anyway; an extra explicit pad would compound. If the lines run together too tightly in listening, easy to add back as a tiny silence WAV between line N and N+1.
+
+**What I tried and dropped**
+First sketch had `tts_elevenlabs` still write to `tmp_path` (line 0) and additionally drop lines 1+ in `queue/` directly. That preserves the legacy rename contract but breaks playback order — lines 1+ land in `queue/` (sorted ahead of `tmp_path` which is still `.part`) and the segmenter picks them up before line 0. Switched to "skip the rename entirely when backend returns a list" so all per-line WAVs have consistent `play-<ts>-NN.wav` naming with naturally correct sort order.
+
+---
+
 ## 2026-05-24 — SSE live game state (branch: 11labs-migration)
 
 Wired the SSE polish item from `docs/demo-polish.md`. Pipeline now POSTs a compact state dict (`balls`, `strikes`, `outs`, `runners`, `batter`, `pitcher`, `inning`, `half`, `score`) to `/state` after every `gameState.enrich(gumbo)`, separate from the `/generate` audio post — so the on-screen count/diamond updates the moment a play is observed, not whenever the corresponding audio segment plays out (which can lag by several seconds while WAVs queue up and segment). Server side: `/state` POST holds the last snapshot under a `threading.Condition`, bumps a monotonic `state_version`, and notifies waiters. `/events` is a `text/event-stream` Response whose generator emits the current state on connect (so a late-joining client doesn't sit on placeholders), then `wait_for`s on the condition with a 15s timeout — on wake it ships a `data:` frame, on timeout it ships a `: heartbeat` comment so reverse proxies don't kill the connection. `runners` is sent as a list of occupied base numbers (`[1, 3]`) which matches the existing `data-sse-runners="1,3"` markup convention.
