@@ -5,6 +5,16 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-24 — Batter intros on new at-bat (branch: 11labs-migration)
+
+Booth was jumping straight into the live call on every play, including the first pitch of a new at-bat. Real broadcasts open the at-bat with a brief intro — batter name, today's line — then transition into the live call. Added an `is_new_batter` signal that the script prompt opts into.
+
+`pipeline.js` now tracks `lastBatterId` across `onGumbo` calls (closed over the pipeline instance, same pattern as `priorHalfInning`). On each call we compute `isNewBatter = currentBatterId !== lastBatterId`, then pass both `isNewBatter` and `batterLine` (already computed earlier in the function for the `/state` payload) into `scriptGen.generate(...)`. `lastBatterId` updates before the UI_ONLY early-return so the signal stays coherent if the flag is flipped mid-session.
+
+`ScriptGenerator.buildMessages` now accepts `isNewBatter` and `batterLine` and emits a compact `is_new_batter: true (batter line so far: 0-for-1)` block into the user prompt when set — falling back to "first PA of the day for this batter — no line yet" when `batterLine` is null. The system prompt was updated to keep "no dry setup" as the default but add an explicit EXCEPTION: when `is_new_batter: true`, open with a brief intro using the batter's name and today's line BEFORE the live call. 2 new tests cover the prompt threading in both states; full suite 76/76.
+
+---
+
 ## 2026-05-24 — Real team meta in the broadcast card (branch: 11labs-migration)
 
 Demo card was still showing the static placeholder teams (Brooklyn Hawks vs Portland Knights, Veritas Field, 5–3, Top 7th) regardless of which fixture was loaded. Extended the `/state` payload from `pipeline.js` to carry the live game's teams + venue, and the frontend now applies them via the existing SSE channel.

@@ -33,6 +33,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   const stateUrl = voiceUrl.replace("/generate", "/state");
 
   let priorHalfInning = null;
+  let lastBatterId = null;
 
   const buildKeywordIds = ({ activeThreads }) =>
     activeThreads.map((t) => ({ id: `thread:${t.id}`, kind: "thread", keywords: [t.id.replaceAll("_", " "), (t.hint ?? "").toLowerCase().slice(0, 30)] }));
@@ -172,6 +173,10 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       const activeThreads = threads.observe(enriched);
       const verdict = highlightDet.classify(enriched);
 
+      const currentBatterId = enriched.batter?.id ?? null;
+      const isNewBatter = currentBatterId != null && currentBatterId !== lastBatterId;
+      lastBatterId = currentBatterId;
+
       if (UI_ONLY) {
         // Still observe so memory/threads/log stay coherent if we flip the
         // flag off mid-session, but skip the LLM and the voice post.
@@ -188,6 +193,8 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         halfInningMemoryScripts: halfInning.scripts,
         cooldownByThreadId: (id) => touched.cooldownFor(`thread:${id}`),
         cooldownByEventId: (id) => touched.cooldownFor(`event:${id}`),
+        isNewBatter,
+        batterLine,
       });
 
       summary.observe(enriched, { classification: verdict.classification });

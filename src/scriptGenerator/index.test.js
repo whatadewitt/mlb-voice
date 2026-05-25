@@ -83,4 +83,25 @@ describe("ScriptGenerator", () => {
       model: expect.any(String), play_id: "p-1", reason: expect.stringContaining("boom"),
     }));
   });
+
+  it("threads is_new_batter + batter line into the user prompt", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Trevino, 0-for-1, steps in. [S2]" } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } } });
+    await gen.generate(baseInputs({ isNewBatter: true, batterLine: "0-for-1" }));
+    const user = create.mock.calls[0][0].messages[1].content;
+    expect(user).toContain("is_new_batter: true");
+    expect(user).toContain("0-for-1");
+  });
+
+  it("omits the new-batter block when isNewBatter is false", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Ball one. [S2]" } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } } });
+    await gen.generate(baseInputs({ isNewBatter: false, batterLine: "0-for-1" }));
+    const user = create.mock.calls[0][0].messages[1].content;
+    expect(user).not.toContain("is_new_batter");
+  });
 });

@@ -14,13 +14,15 @@ Format every line with a speaker tag. Alternate speakers, ALWAYS end with the OP
 Speech style: never spell out units (say "miles per hour", not "M P H"). Skip velocity if it would interrupt flow.
 Length: typical play 8–14 seconds; HRs and walk-offs may run longer.
 
+By default, jump right into the live call — no dry narration or setup. EXCEPTION: when the input includes \`is_new_batter: true\`, open with a brief intro using the batter's name and today's line (e.g., "Trevino, 0-for-1 on the night, steps in...") BEFORE the live call begins. The intro is one short [S1] line; the live call follows immediately.
+
 DO NOT:
 - repeat phrasing or storylines you've already covered this inning (you'll be told what those are).
 - restate inning, outs, or score unless they are explicitly listed in the state block — they are intentionally omitted when not relevant.
 `;
 
 function buildMessages(inp) {
-  const { enriched, threads, highlight, gameSummaryProse, halfInningMemoryScripts, cooldownByThreadId, cooldownByEventId } = inp;
+  const { enriched, threads, highlight, gameSummaryProse, halfInningMemoryScripts, cooldownByThreadId, cooldownByEventId, isNewBatter, batterLine } = inp;
 
   const vibe = VIBE_DIRECTIVE[highlight.vibe] ?? VIBE_DIRECTIVE.calm;
   const systemContent = `${SYSTEM_PROMPT_BASE}\nVibe directive: ${vibe}`;
@@ -29,6 +31,10 @@ function buildMessages(inp) {
   const stateBlockLines = Object.entries(stateFields)
     .filter(([k]) => k !== "stats_to_mention")
     .map(([k, v]) => `${k}: ${v}`).join("\n");
+
+  const introBlock = isNewBatter
+    ? `is_new_batter: true${batterLine ? ` (batter line so far: ${batterLine})` : " (first PA of the day for this batter — no line yet)"}`
+    : "";
 
   const threadsBlock = threads.length
     ? "Active storylines (use only if natural; storylines marked DO NOT touch are off-limits):\n" +
@@ -49,7 +55,7 @@ function buildMessages(inp) {
 
   const playSentence = `What just happened: ${enriched.result_text || "the pitcher delivered."}`;
 
-  const userContent = [stateBlockLines, summaryBlock, threadsBlock, memBlock, statsBlock, playSentence]
+  const userContent = [stateBlockLines, introBlock, summaryBlock, threadsBlock, memBlock, statsBlock, playSentence]
     .filter(Boolean).join("\n\n");
 
   return [
