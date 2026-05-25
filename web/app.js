@@ -1,4 +1,10 @@
 (function () {
+  // Mock game-level constants — things that don't (yet) come from the live
+  // pipeline. Match the shape used in the design reference (app.jsx GAME).
+  const GAME = {
+    announcers: 'Pat Twinkle & Marty Doefinger',
+  };
+
   const audio = document.getElementById('audio');
   const playBtn = document.getElementById('play-btn');
   const iconPlay = document.getElementById('icon-play');
@@ -13,6 +19,10 @@
   let playing = false;
   let muted = false;
   let lastVolume = 0.7;
+
+  // ── Static mock fields ────────────────────────────────────────
+  const nowPlayingNameEl = document.querySelector('.now-playing span:not(.nb-label)');
+  if (nowPlayingNameEl) nowPlayingNameEl.textContent = GAME.announcers;
 
   // ── HLS attach ────────────────────────────────────────────────
   if (window.Hls && window.Hls.isSupported()) {
@@ -142,7 +152,7 @@
     if (name && team.short_name) name.textContent = team.short_name;
     const record = teamEl.querySelector('.team-record');
     if (record && team.record && team.record.wins != null && team.record.losses != null) {
-      record.textContent = `${team.record.wins}-${team.record.losses} · ${side}`;
+      record.textContent = `${team.record.wins}-${team.record.losses}`;
     }
   }
 
