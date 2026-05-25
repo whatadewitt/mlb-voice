@@ -12,7 +12,7 @@ const GAME = {
   bases: { first: true, second: false, third: true },
   atBat: { name: 'M. Rodríguez', line: '2-for-4, HR' },
   pitching: 'D. Tanaka (87 P)',
-  announcers: 'Pat Twinkle & Marty Doefiuger',
+  announcers: 'Pat Twinkle & Marty Doefinger',
   field: 'Veritas Field',
   listeners: '12,847',
 };
