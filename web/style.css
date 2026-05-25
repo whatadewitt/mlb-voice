@@ -71,10 +71,14 @@ button { font-family: inherit; }
 }
 
 .brand-name .ai-mono {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
-  letter-spacing: -0.02em;
   color: var(--accent);
+  letter-spacing: 0rem;
+  margin-right: .2rem;
+  font-size: 15px;
+  line-height: 1;
+  vertical-align: baseline;
+  transform: translateY(1.5px);
+  display: inline-block;
 }
 
 .app[data-style="neon"] .brand-name .ai-mono {
@@ -218,8 +222,8 @@ button { font-family: inherit; }
 
 .team-logo.home {
   background: #18324E;
-  color: #F4D03F;
-  border: 3px solid #F4D03F;
+  color: #f7f7f5;
+  border: 3px solid #f7f7f5;
 }
 
 .team-logo.away {
