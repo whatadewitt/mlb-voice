@@ -12,6 +12,12 @@ import { RuntimeLog } from "./runtimeLog.js";
 import { Logger } from "./logger.js";
 
 export function buildPipeline({ year, runDir, openai, voiceUrl }) {
+  // UI_ONLY: skip the LLM script call, the TTS POST, and the ad enqueue. The
+  // /state push still fires so the frontend can be iterated on at the speed
+  // of gameState.enrich() rather than the speed of gpt-5 + elevenlabs.
+  const UI_ONLY = !!process.env.UI_ONLY;
+  if (UI_ONLY) console.log("[pipeline] UI_ONLY=1 — skipping script gen, voice POST, and ads");
+
   const statcast = new StatcastClient();
   const gameState = new GameStateService({ statcast, year });
   const threads = new NarrativeThreadEngine();
@@ -81,7 +87,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       halfInning.observe(current);
       priorHalfInning = current;
 
-      if (halfInningEnded) {
+      if (halfInningEnded && !UI_ONLY) {
         const ad = adLib.pickNext();
         if (ad) {
           try {
@@ -99,6 +105,14 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
 
       const activeThreads = threads.observe(enriched);
       const verdict = highlightDet.classify(enriched);
+
+      if (UI_ONLY) {
+        // Still observe so memory/threads/log stay coherent if we flip the
+        // flag off mid-session, but skip the LLM and the voice post.
+        summary.observe(enriched, { classification: verdict.classification });
+        touched.tick();
+        return;
+      }
 
       const script = await scriptGen.generate({
         enriched,

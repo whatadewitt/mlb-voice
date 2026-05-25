@@ -472,6 +472,11 @@ SSE_HEARTBEAT_SECS = 15
 # back by that much so the on-screen count/diamond stays roughly in sync with
 # what the announcers are saying. Set to 0 to publish immediately.
 SSE_DELAY = float(os.environ.get("SSE_DELAY", "7"))
+if os.environ.get("UI_ONLY"):
+    # No audio to align with — push state instantly so the frontend updates
+    # at the speed the pipeline observes plays.
+    SSE_DELAY = 0
+    log.info("UI_ONLY=1 detected; forcing SSE_DELAY=0")
 _state_lock = threading.Lock()
 _state_cond = threading.Condition(_state_lock)
 _last_state: dict = {}

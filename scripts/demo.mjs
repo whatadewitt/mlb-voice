@@ -37,7 +37,9 @@ for (const [dir, exts] of [["queue", [".wav"]], ["hls", [".ts", ".m3u8"]]]) {
 }
 
 const backend = process.env.TTS_BACKEND ?? "elevenlabs";
-console.log(`-> Starting TTS server (backend=${backend})...`);
+const uiOnly = !!process.env.UI_ONLY;
+const modeNote = uiOnly ? `, UI_ONLY=1 (no LLM/voice, SSE_DELAY=0)` : "";
+console.log(`-> Starting TTS server (backend=${backend}${modeNote})...`);
 const server = spawn("uv", ["run", "python", "server.py"], {
   env: { ...process.env, TTS_BACKEND: backend },
   stdio: "inherit",
