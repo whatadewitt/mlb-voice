@@ -118,6 +118,7 @@
 
   const inningNumEl = document.querySelector('.inning-num');
   const scoreBlockEl = document.querySelector('.score-block');
+  const atBatLineEl = document.querySelector('.at-bat .line');
   // The inning-strip-left holds: [.inning-num, .dot-sep, venue-span, .dot-sep, game-num-span]
   // Grab the venue span (first span that isn't .inning-num or .dot-sep).
   const venueEl = (() => {
@@ -184,6 +185,15 @@
     if ('outs' in s) setPips('outs', s.outs);
     if ('runners' in s) setRunners(s.runners);
     if (atBatPlayer && s.batter) atBatPlayer.textContent = s.batter;
+    if (atBatLineEl) {
+      const parts = [];
+      if (s.batter_line) parts.push(s.batter_line);
+      if (s.pitcher) {
+        const pitchSuffix = s.pitcher_pitches != null ? ` (${s.pitcher_pitches} P)` : '';
+        parts.push(`vs. ${s.pitcher}${pitchSuffix}`);
+      }
+      if (parts.length) atBatLineEl.textContent = parts.join(' · ');
+    }
     if (s.teams) {
       applyTeam('home', s.teams.home);
       applyTeam('away', s.teams.away);

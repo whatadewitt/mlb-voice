@@ -58,6 +58,22 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         abbreviation: raw.abbreviation,
         record: raw.record ? { wins: raw.record.wins, losses: raw.record.losses } : null,
       } : null;
+      // Boxscore is keyed `ID<mlbam>` under either team; walk both sides.
+      const playerStats = (id) => {
+        if (!id) return null;
+        const teams = gumbo?.liveData?.boxscore?.teams ?? {};
+        for (const side of ["home", "away"]) {
+          const entry = teams[side]?.players?.[`ID${id}`];
+          if (entry) return entry.stats ?? null;
+        }
+        return null;
+      };
+      const batStats = playerStats(enriched.batter?.id)?.batting ?? {};
+      const pitStats = playerStats(enriched.pitcher?.id)?.pitching ?? {};
+      const batterLine = batStats.atBats != null
+        ? `${batStats.hits ?? 0}-for-${batStats.atBats}${batStats.homeRuns > 0 ? ", HR" : ""}`
+        : null;
+      const pitcherPitches = pitStats.numberOfPitches ?? pitStats.pitchesThrown ?? null;
       const statePayload = {
         balls: enriched.balls,
         strikes: enriched.strikes,
@@ -66,7 +82,9 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         inning: enriched.inning,
         half: enriched.half,
         batter: enriched.batter?.name ?? "",
+        batter_line: batterLine,
         pitcher: enriched.pitcher?.name ?? "",
+        pitcher_pitches: pitcherPitches,
         score: enriched.score,
         teams: {
           home: teamMeta(gumbo?.gameData?.teams?.home),
