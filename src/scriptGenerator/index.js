@@ -7,6 +7,18 @@ const VIBE_DIRECTIVE = {
   explosive: "This is a holy-shit moment. Sustained call, dramatic pause, S2 disbelief, full stat dump where natural.",
 };
 
+// Pre-round any decimal numeric values in stats_to_mention before the LLM sees
+// them — belt-and-suspenders alongside the system-prompt rule against decimals,
+// so "65.8 mph" never reaches the model to be transcribed as "65 point 8".
+function roundStat(stat) {
+  if (!stat || typeof stat.value !== "string") return stat;
+  const rounded = stat.value.replace(/-?\d+\.\d+/g, (m) => String(Math.round(Number(m))));
+  return rounded === stat.value ? stat : { ...stat, value: rounded };
+}
+function roundStats(stats) {
+  return Array.isArray(stats) ? stats.map(roundStat) : stats;
+}
+
 // Tier-specific guidance on whether [S2] (color) must participate. On routine
 // pitches the color guy was chiming in on every call and grew tiresome; he now
 // stays quiet by default and only speaks up on notable+ plays.
@@ -22,6 +34,7 @@ const SYSTEM_PROMPT_BASE = `You are a two-person baseball broadcast booth.
 - [S2] is the color analyst (insight, personality, opinion).
 Format every line with a speaker tag. Default to alternating speakers and ending with the OPPOSITE empty tag (e.g., last line "[S1]..." → final tag "[S2]") — see the tier-specific guidance below for exceptions on routine plays.
 Speech style: never spell out units (say "miles per hour", not "M P H"). Skip velocity if it would interrupt flow.
+Numeric stats: round to the nearest whole number and prefer approximate phrasing ("around 96", "in the mid-90s", "just shy of 400 feet"). Never speak a decimal or the word "point" — decimals upstream have already been rounded; do not invent decimals.
 Length: typical play 8–14 seconds; HRs and walk-offs may run longer.
 
 By default, jump right into the live call — no dry narration or setup. EXCEPTION: when the input includes \`is_new_batter: true\`, open with a brief intro using the batter's name and today's line (e.g., "Trevino, 0-for-1 on the night, steps in...") BEFORE the live call begins. The intro is one short [S1] line; the live call follows immediately.
@@ -38,7 +51,8 @@ function buildMessages(inp) {
   const tierRule = TIER_DIRECTIVE[highlight.classification] ?? TIER_DIRECTIVE.routine;
   const systemContent = `${SYSTEM_PROMPT_BASE}\nVibe directive: ${vibe}\nTier guidance (${highlight.classification}): ${tierRule}`;
 
-  const stateFields = pickStateFields(enriched, { stats_to_mention: highlight.stats_to_mention });
+  const roundedStats = roundStats(highlight.stats_to_mention);
+  const stateFields = pickStateFields(enriched, { stats_to_mention: roundedStats });
   const stateBlockLines = Object.entries(stateFields)
     .filter(([k]) => k !== "stats_to_mention")
     .map(([k, v]) => `${k}: ${v}`).join("\n");
@@ -57,9 +71,9 @@ function buildMessages(inp) {
       halfInningMemoryScripts.map((s) => `- ${s}`).join("\n")
     : "You haven't said anything yet this half-inning.";
 
-  const statsBlock = highlight.stats_to_mention.length && highlight.classification !== "routine"
-    ? "Stats relevant to this play (use 1–3 naturally, do not list mechanically):\n" +
-      highlight.stats_to_mention.map((s) => `- ${s.label}: ${s.value}`).join("\n")
+  const statsBlock = roundedStats?.length && highlight.classification !== "routine"
+    ? "Stats relevant to this play (use 1–3 naturally, do not list mechanically; speak as approximations, never decimals):\n" +
+      roundedStats.map((s) => `- ${s.label}: ${s.value}`).join("\n")
     : "";
 
   const summaryBlock = gameSummaryProse ? `Game so far: ${gameSummaryProse}` : "";

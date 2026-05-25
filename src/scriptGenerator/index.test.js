@@ -128,4 +128,29 @@ describe("ScriptGenerator", () => {
     expect(system).toMatch(/Tier guidance \(highlight\)/);
     expect(system).not.toMatch(/OPTIONAL/);
   });
+
+  it("rounds decimal stat values before they reach the LLM", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "[S1] Crushed. [S2] Wow." } }],
+    });
+    const gen = new ScriptGenerator({ openai: { chat: { completions: { create } } } });
+    await gen.generate(baseInputs({
+      highlight: {
+        classification: "highlight",
+        vibe: "big_moment",
+        stats_to_mention: [
+          { label: "Exit velocity", value: "115.7 mph" },
+          { label: "Sprint speed", value: "28.4 ft/s" },
+          { label: "Pitch velocity", value: "65.8 mph" },
+        ],
+      },
+    }));
+    const user = create.mock.calls[0][0].messages[1].content;
+    expect(user).toContain("116 mph");
+    expect(user).toContain("28 ft/s");
+    expect(user).toContain("66 mph");
+    expect(user).not.toContain("115.7");
+    expect(user).not.toContain("28.4");
+    expect(user).not.toContain("65.8");
+  });
 });

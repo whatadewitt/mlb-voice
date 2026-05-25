@@ -5,6 +5,17 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-25 — Round numeric stats before they reach the LLM (branch: 11labs-migration)
+
+Audible demo had the broadcaster saying things like "65 point 8 miles per hour" — fluent for a chess engine, not for a baseball broadcast. Real announcers round and approximate: "around 66," "mid-60s," "just shy of 400 feet." Two-layer fix:
+
+1. **Prompt rule.** Added a line to `SYSTEM_PROMPT_BASE`: round to the nearest whole number, prefer approximate phrasing, never speak a decimal or the word "point." Reinforced in the stats block header ("speak as approximations, never decimals").
+2. **Code-side scrub.** New `roundStats(stats)` helper in `ScriptGenerator` runs each `stats_to_mention` entry through a regex that replaces every `-?\d+\.\d+` substring with its rounded-int form. So "115.7 mph" → "116 mph", "0.85" → "1", "1.85" → "2". This applies to the stats whether they appear in the dedicated stats block or in `pickStateFields` output — both pull from the same `roundedStats` array. The model now physically cannot see a decimal, so even if it ignored the prompt rule it has nothing to copy through.
+
+Why not fix the source in `highlightDetector.curateStats`? The decimals there (exit_velocity to 0.1, sprint_speed to 0.1, leverage_index to 0.01) are still useful for runtime-log inspection and downstream Phase-2 training. Rounding at the ScriptGenerator boundary keeps the LLM-facing surface clean without flattening the underlying numeric fidelity. 1 new test asserts three decimal stats (115.7 / 28.4 / 65.8) become 116 / 28 / 66 in the user prompt; full suite 79/79.
+
+---
+
 ## 2026-05-25 — Tier-aware color analyst, quieter on routine pitches (branch: 11labs-migration)
 
 The color guy ([S2]) was chiming in on every call, including routine balls and strikes — turns a 6-second ball-one into a 10-second mini-discussion that nobody asked for and that makes the broadcast feel relentlessly busy. Real broadcasts have the color analyst lay out for most pitches and step in on contact, big counts, or notable plays.
