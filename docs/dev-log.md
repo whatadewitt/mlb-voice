@@ -5,6 +5,23 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-24 — Real team meta in the broadcast card (branch: 11labs-migration)
+
+Demo card was still showing the static placeholder teams (Brooklyn Hawks vs Portland Knights, Veritas Field, 5–3, Top 7th) regardless of which fixture was loaded. Extended the `/state` payload from `pipeline.js` to carry the live game's teams + venue, and the frontend now applies them via the existing SSE channel.
+
+`statePayload.teams.{home,away}` carries `id` (MLBAM team ID, used to build the logo URL), `name` ("Cincinnati Reds"), `short_name` ("Reds"), `location` ("Cincinnati"), `abbreviation` ("CIN"), and `record.{wins,losses}` — all pulled directly from `gumbo.gameData.teams` so the `EnrichedPlay` shape doesn't have to grow. `statePayload.venue` is `gumbo.gameData.venue.name`. The frontend's `applyState` was extended with `applyTeam(side, team)`, `applyScore(score)`, `applyInning(inning, half)`, and `applyVenue(venue)`; each is null-guarded so old-style payloads from prior server versions don't crash.
+
+Team logos use MLB's official spot endpoint: `https://midfield.mlbstatic.com/v1/team/<id>/spots/108` — verified 200 OK with transparent PNG (~1.5–2.6 KB per team). The image is dropped into the existing `.team-logo` badge at 80×80px so the colored ring CSS still frames it. The badge stores the team ID in `dataset.teamId` so we don't re-set `innerHTML` on every SSE message if the same team is still showing.
+
+Score block (away — home) and inning (`Top 9th` via a small `ordinal()` helper) update on every state. Venue replaces the placeholder in the inning strip's second span.
+
+Team colors are deferred — the user pointed at jimniels/teamcolors and we confirmed it has 30 MLB entries keyed by full team name, but the MLB spot logo PNGs are already colored brand marks, so the badge looks right without a colors lookup. If we want the badge ring tinted to the team primary, easy follow-up: bundle `data/mlb_team_colors.json` from teamcolors, look up by `team.name` in pipeline, send `team.colors.primary` in the state payload, and set `--team-color` CSS var on `.team`.
+
+**What I tried and dropped**
+First sketch passed the raw `gumbo.gameData.teams.home` straight into the payload, but the `record` block alone is ~14 fields per team — bloats the SSE frame for fields nobody renders. Distilled to the 4 we actually use (id, name, short_name, location, abbreviation, plus wins/losses).
+
+---
+
 ## 2026-05-24 — SSE_DELAY for UI/audio alignment (branch: 11labs-migration)
 
 First listen of the SSE-enabled demo showed the count pips and base diamond updating ~7–10s *ahead* of what the announcers were saying. The pipeline POSTs `/state` the instant `gameState.enrich(gumbo)` finishes, but the audio for that play has to travel through queue → ffmpeg → playlist → player buffer before the listener hears it — typically 6–10s of pipe. So the SSE channel races the audio chain and wins by a lot.

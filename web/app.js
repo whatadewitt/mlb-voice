@@ -106,6 +106,67 @@
     diamond.setAttribute('data-sse-runners', [...occupied].sort().join(','));
   }
 
+  const inningNumEl = document.querySelector('.inning-num');
+  const scoreBlockEl = document.querySelector('.score-block');
+  // The inning-strip-left holds: [.inning-num, .dot-sep, venue-span, .dot-sep, game-num-span]
+  // Grab the venue span (first span that isn't .inning-num or .dot-sep).
+  const venueEl = (() => {
+    const left = document.querySelector('.inning-strip-left');
+    if (!left) return null;
+    return left.querySelector('span:not(.inning-num):not(.dot-sep)');
+  })();
+
+  function ordinal(n) {
+    const v = n % 100;
+    if (v >= 11 && v <= 13) return n + 'th';
+    const s = ['th', 'st', 'nd', 'rd'];
+    return n + (s[n % 10] || 'th');
+  }
+
+  function applyTeam(side, team) {
+    if (!team) return;
+    const teamEl = document.querySelector(`.team.${side}`);
+    if (!teamEl) return;
+    const logo = teamEl.querySelector('.team-logo');
+    if (logo && team.id) {
+      // MLB spot logo — transparent PNG, sized to fit inside the existing 88px badge ring.
+      const url = `https://midfield.mlbstatic.com/v1/team/${team.id}/spots/108`;
+      if (logo.dataset.teamId !== String(team.id)) {
+        logo.innerHTML = `<img src="${url}" alt="${team.abbreviation || ''}" style="width:80px;height:80px;object-fit:contain"/>`;
+        logo.dataset.teamId = String(team.id);
+      }
+    }
+    const city = teamEl.querySelector('.team-city');
+    if (city && team.location) city.textContent = team.location;
+    const name = teamEl.querySelector('.team-name');
+    if (name && team.short_name) name.textContent = team.short_name;
+    const record = teamEl.querySelector('.team-record');
+    if (record && team.record && team.record.wins != null && team.record.losses != null) {
+      record.textContent = `${team.record.wins}-${team.record.losses} · ${side}`;
+    }
+  }
+
+  function applyScore(score) {
+    if (!score || !scoreBlockEl) return;
+    const spans = scoreBlockEl.querySelectorAll('span:not(.dash)');
+    if (spans.length >= 2) {
+      spans[0].textContent = score.away ?? 0;
+      spans[1].textContent = score.home ?? 0;
+    }
+    scoreBlockEl.setAttribute('aria-label', `Score ${score.away ?? 0} to ${score.home ?? 0}`);
+  }
+
+  function applyInning(inning, half) {
+    if (!inningNumEl || inning == null || !half) return;
+    const label = half === 'top' ? 'Top' : 'Bot';
+    inningNumEl.textContent = `${label} ${ordinal(inning)}`;
+  }
+
+  function applyVenue(venue) {
+    if (!venueEl || !venue) return;
+    venueEl.textContent = venue;
+  }
+
   function applyState(s) {
     if (!s || typeof s !== 'object') return;
     if ('balls' in s) setPips('balls', s.balls);
@@ -113,6 +174,13 @@
     if ('outs' in s) setPips('outs', s.outs);
     if ('runners' in s) setRunners(s.runners);
     if (atBatPlayer && s.batter) atBatPlayer.textContent = s.batter;
+    if (s.teams) {
+      applyTeam('home', s.teams.home);
+      applyTeam('away', s.teams.away);
+    }
+    if (s.score) applyScore(s.score);
+    if (s.inning != null && s.half) applyInning(s.inning, s.half);
+    if (s.venue) applyVenue(s.venue);
   }
 
   if (typeof EventSource !== 'undefined') {

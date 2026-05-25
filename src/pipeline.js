@@ -44,6 +44,14 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       if (enriched.runners?.first) runners.push(1);
       if (enriched.runners?.second) runners.push(2);
       if (enriched.runners?.third) runners.push(3);
+      const teamMeta = (raw) => raw ? {
+        id: raw.id,
+        name: raw.name,
+        short_name: raw.teamName,
+        location: raw.locationName,
+        abbreviation: raw.abbreviation,
+        record: raw.record ? { wins: raw.record.wins, losses: raw.record.losses } : null,
+      } : null;
       const statePayload = {
         balls: enriched.balls,
         strikes: enriched.strikes,
@@ -54,6 +62,11 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         batter: enriched.batter?.name ?? "",
         pitcher: enriched.pitcher?.name ?? "",
         score: enriched.score,
+        teams: {
+          home: teamMeta(gumbo?.gameData?.teams?.home),
+          away: teamMeta(gumbo?.gameData?.teams?.away),
+        },
+        venue: gumbo?.gameData?.venue?.name ?? null,
       };
       fetch(stateUrl, {
         method: "POST",
