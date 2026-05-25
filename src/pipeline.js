@@ -6,6 +6,7 @@ import { GameSummary } from "./memory/gameSummary.js";
 import { HalfInningMemory } from "./memory/halfInningMemory.js";
 import { TouchedStorylines } from "./memory/touchedStorylines.js";
 import { ScriptGenerator } from "./scriptGenerator/index.js";
+import { buildPitchInput, generatePitchScript } from "./scriptGenerator/perPitch.js";
 import { HighlightDetector } from "./highlightDetector.js";
 import { AdLibrary } from "./adLibrary.js";
 import { RuntimeLog } from "./runtimeLog.js";
@@ -206,6 +207,92 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       logger.stage("script", { input: { play_id: enriched.play_id }, output: { classification: verdict.classification }, latency_ms: 0 });
 
       // Post to TTS server.
+      try {
+        await fetch(voiceUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: script, voice_set: "broadcaster" }),
+        });
+      } catch (e) {
+        logger.error("voice_post_failed", { reason: String(e) });
+      }
+    },
+
+    // Per-pitch call. Gated by PER_PITCH=1 in the scenario runner — old onGumbo
+    // callers don't touch this path. Emits a short [S1]-led script for a single
+    // pitch inside a PA. The PA-level result call still flows through onGumbo
+    // after the runner has walked all pitches in this play.
+    async onPitchEvent(gumbo, eventIdx) {
+      const cp = gumbo?.liveData?.plays?.currentPlay;
+      const pitch = buildPitchInput(cp, eventIdx);
+      if (!pitch) return; // pickoff, mound visit, or terminating pitch (handled by onGumbo)
+
+      // Push state with the post-pitch count so the frontend pips update.
+      // Runners/inning/outs unchanged inside a PA (state.outs and runners only
+      // shift on the PA result), so reuse what's in the linescore.
+      const ls = gumbo?.liveData?.linescore ?? {};
+      const offense = ls.offense ?? {};
+      const runners = [];
+      if (offense.first) runners.push(1);
+      if (offense.second) runners.push(2);
+      if (offense.third) runners.push(3);
+      const teamMeta = (raw) => raw ? {
+        id: raw.id,
+        name: raw.name,
+        short_name: raw.teamName,
+        location: raw.locationName,
+        abbreviation: raw.abbreviation,
+        record: raw.record ? { wins: raw.record.wins, losses: raw.record.losses } : null,
+      } : null;
+      const batter = cp?.matchup?.batter;
+      const pitcher = cp?.matchup?.pitcher;
+      const half = cp?.about?.halfInning === "top" ? "top" : "bottom";
+      const statePayload = {
+        balls: pitch.count_after?.balls ?? 0,
+        strikes: pitch.count_after?.strikes ?? 0,
+        outs: cp?.count?.outs ?? 0,
+        runners,
+        inning: cp?.about?.inning,
+        half,
+        batter: batter?.fullName ?? "",
+        pitcher: pitcher?.fullName ?? "",
+        score: {
+          home: ls.teams?.home?.runs ?? 0,
+          away: ls.teams?.away?.runs ?? 0,
+          home_team: gumbo?.gameData?.teams?.home?.abbreviation,
+          away_team: gumbo?.gameData?.teams?.away?.abbreviation,
+        },
+        teams: {
+          home: teamMeta(gumbo?.gameData?.teams?.home),
+          away: teamMeta(gumbo?.gameData?.teams?.away),
+        },
+        venue: gumbo?.gameData?.venue?.name ?? null,
+      };
+      fetch(stateUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(statePayload),
+      }).catch((e) => logger.error("state_post_failed", { reason: String(e) }));
+
+      logger.info("per_pitch_observed", {
+        play_idx: cp?.about?.atBatIndex,
+        event_idx: eventIdx,
+        call: pitch.call,
+        velo: pitch.velo,
+      });
+
+      if (UI_ONLY) return;
+
+      const script = await generatePitchScript({
+        openai,
+        model: process.env.SCRIPT_MODEL || "gpt-5",
+        pitch,
+        batterName: batter?.fullName,
+        pitcherName: pitcher?.fullName,
+        logger,
+      });
+      if (!script) return;
+
       try {
         await fetch(voiceUrl, {
           method: "POST",

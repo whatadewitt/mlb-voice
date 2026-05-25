@@ -5,6 +5,26 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-25 — Pitch-by-pitch broadcast mode (PER_PITCH flag) (branch: 11labs-migration)
+
+A `playEvents` array inside one `allPlays` entry typically contains 3–10 individual pitch events (ball, called strike, foul, in-play). The existing pipeline collapses the entire PA into a single broadcaster call — "Stephenson walks" or "Steer doubles to left" — and never gives the listener the live cadence of a real broadcast where each pitch gets called as it happens. PER_PITCH mode adds that cadence behind a feature flag, default OFF.
+
+New file `src/scriptGenerator/perPitch.js` carries the per-pitch prompt + generation logic, kept separate from the PA-level `ScriptGenerator` so the two have independent voice and prompt evolutions. `buildPitchInput(currentPlay, eventIdx)` returns a slim `{call, pitch_type, velo, count_after}` object for callable pitches and returns `null` for non-pitch events (pickoffs, mound visits) AND for the terminating "In play..." pitch event — that one's call belongs to the PA result and is intentionally handed off to `onGumbo`. The per-pitch prompt is short and explicit: one [S1] line targeting 1-3 seconds of audio, [S2] only on swinging strikes / foul-into-stands / borderline calls, never restate inning/outs/score, no decimals, round velocity to nearest mph. Velocity rounding happens both in `buildPitchInput` (regex-stripped via `Math.round`) and in the prompt rule — belt-and-suspenders matching the same approach in the PA-level generator.
+
+`pipeline.js` gains a sibling `onPitchEvent(gumbo, eventIdx)` method that builds a minimal state payload directly from the pitch event's `count` (post-pitch) plus the linescore's offense/runners and POSTs to `/state` so the frontend pips update per pitch. Then it calls `generatePitchScript(...)` and POSTs the resulting script to `/generate`. Skipped entirely in `UI_ONLY` (matching the existing skip pattern). The original `onGumbo` is untouched — PER_PITCH mode is purely additive at the pipeline layer.
+
+`src/scenarios/run.js` walks `playEvents` (filtered to `isPitch=true`) before firing the PA-level `onGumbo` when `PER_PITCH=1`. Default flow is unchanged. `PER_PITCH_SLEEP_MS=N` (default 1200ms) controls the inter-pitch pacing.
+
+10 new tests (9 for perPitch, 5 for the pipeline including UI_ONLY behavior, plus the existing 4 for buildPitchInput); full suite 93/93. Smoke-validated with `PER_PITCH=1 UI_ONLY=1 SPEED=10` on `scenarios/standard_game.yaml` — walked 5 plays + ~20 individual pitches cleanly. Documented as a feature flag in `docs/demo-polish.md`.
+
+**Known limitation**
+Walks and strikeouts have no "In play" terminating event — the resolving pitch (ball 4 of a walk, strike 3 of a K) fires both a per-pitch call AND the PA result call, so the listener hears "Ball four, high" then "Stephenson walks." Not blocking, but tunable: peek at the next play's `atBatIndex` (or the play's own `result` if we trust it) to know whether this is the terminating pitch of a non-contact PA. Logged in `docs/demo-polish.md` for the user to weigh in on once they've heard it.
+
+**What I tried and dropped**
+First sketch built a separate per-pitch state payload by re-running `gameState.enrich(gumbo)` for every pitch event. Cost is the WP/LI recompute and the statcast season-stats lookup — both wasted, because intra-PA WP doesn't meaningfully change and the season stats are already cached from `onGumbo`. Switched to constructing the state payload directly from the pitch event's `count` + the existing linescore, ~10x cheaper per pitch.
+
+---
+
 ## 2026-05-25 — Round numeric stats before they reach the LLM (branch: 11labs-migration)
 
 Audible demo had the broadcaster saying things like "65 point 8 miles per hour" — fluent for a chess engine, not for a baseball broadcast. Real announcers round and approximate: "around 66," "mid-60s," "just shy of 400 feet." Two-layer fix:

@@ -35,12 +35,30 @@ export async function runScenario(scenarioPath) {
   const uiMinPlayMs = Number(process.env.UI_MIN_PLAY_MS) || 1500;
   const sleepMs = UI_ONLY ? Math.max(3000 / speed, uiMinPlayMs) : 3000 / speed;
 
-  console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture} (speed=${speed}, sleep=${sleepMs}ms${UI_ONLY ? " UI_ONLY floored" : ""})`);
+  // PER_PITCH: walk individual pitch events inside each play before firing the
+  // PA-level result call. Default OFF so existing scenarios behave the same.
+  const PER_PITCH = !!process.env.PER_PITCH;
+  const perPitchSleepMs = Number(process.env.PER_PITCH_SLEEP_MS) || 1200;
+
+  console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture} (speed=${speed}, sleep=${sleepMs}ms${UI_ONLY ? " UI_ONLY floored" : ""}${PER_PITCH ? " PER_PITCH=1" : ""})`);
 
   for (let i = startIdx; i < endIdx; i++) {
     const slim = JSON.parse(JSON.stringify(gumbo));
     slim.liveData.plays.currentPlay = allPlays[i];
     console.log(`[scenario:${sc.name}] play ${i}: ${(allPlays[i].result?.description || "").slice(0, 70)}`);
+
+    if (PER_PITCH && pipeline.onPitchEvent) {
+      const events = allPlays[i].playEvents || [];
+      // The terminating pitch's PA-level result call still runs through
+      // onGumbo (below); onPitchEvent itself returns early for "in play" so we
+      // can iterate the entire event list without manually filtering.
+      for (let j = 0; j < events.length; j++) {
+        if (!events[j]?.isPitch) continue;
+        await pipeline.onPitchEvent(slim, j);
+        await new Promise((r) => setTimeout(r, perPitchSleepMs));
+      }
+    }
+
     await pipeline.onGumbo(slim);
     await new Promise((r) => setTimeout(r, sleepMs));
   }
