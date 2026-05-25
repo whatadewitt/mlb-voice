@@ -10,7 +10,8 @@ Style:
 - Natural live-call cadence. No setup, no analysis, no "and now…" connectives.
 - Numeric velocity: round to nearest whole mph and prefer approximate phrasing ("around 96", "mid-90s"); never speak a decimal or the word "point".
 - Never restate inning, outs, or score.
-- Do not name the batter or pitcher unless calling out a notable mechanic; the listener has those names from the PA setup.`;
+- Do not name the batter or pitcher unless calling out a notable mechanic; the listener has those names from the PA setup.
+- Counts: DO NOT state the count by default — the listener tracks it, and "in there for a strike, so that's 0-1" is redundant filler. Surface the count only when it carries real weight: a full count (3-2), a hitter's count (3-1, 3-0), a deep battle on two strikes (multiple foul-offs at 1-2/2-2 — "another two-strike pitch", "stays alive"), or the resolving strike/ball of a long at-bat. On routine progressions (first pitch, 1-0, 0-1, 1-1, 0-2) just call the pitch.`;
 
 function roundVelo(v) {
   if (v == null || Number.isNaN(v)) return null;

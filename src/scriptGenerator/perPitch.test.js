@@ -135,6 +135,16 @@ describe("buildPerPitchMessages", () => {
     expect(msgs[1].content).toContain("around 87 mph");
     expect(msgs[1].content).toContain("0-1");
   });
+
+  it("system prompt instructs not to state the count on routine progressions but to surface it on weight (full count, 2-strike battles)", () => {
+    const msgs = buildPerPitchMessages({
+      pitch: { call: "Ball", velo: 92, count_after: { balls: 1, strikes: 0 } },
+    });
+    const system = msgs[0].content;
+    expect(system).toMatch(/DO NOT state the count by default/);
+    expect(system).toMatch(/full count/i);
+    expect(system).toMatch(/two-strike/i);
+  });
 });
 
 describe("generatePitchScript", () => {
