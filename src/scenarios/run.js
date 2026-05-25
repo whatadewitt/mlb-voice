@@ -28,15 +28,21 @@ export async function runScenario(scenarioPath) {
   // editing scenario files. Sized originally for Dia2's slow generation; with
   // elevenlabs the per-play TTS is ~2-3s so the inter-play wait is mostly dead air.
   const speed = Number(process.env.SPEED) || sc.source.speed || 1;
+  // In UI_ONLY mode there's no LLM/TTS latency to pace plays — only this sleep
+  // does. Cap the minimum at 1500ms so the UI stays readable even when SPEED is
+  // cranked high for full-audio iteration. Set UI_MIN_PLAY_MS=N to override.
+  const UI_ONLY = !!process.env.UI_ONLY;
+  const uiMinPlayMs = Number(process.env.UI_MIN_PLAY_MS) || 1500;
+  const sleepMs = UI_ONLY ? Math.max(3000 / speed, uiMinPlayMs) : 3000 / speed;
 
-  console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture} (speed=${speed})`);
+  console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture} (speed=${speed}, sleep=${sleepMs}ms${UI_ONLY ? " UI_ONLY floored" : ""})`);
 
   for (let i = startIdx; i < endIdx; i++) {
     const slim = JSON.parse(JSON.stringify(gumbo));
     slim.liveData.plays.currentPlay = allPlays[i];
     console.log(`[scenario:${sc.name}] play ${i}: ${(allPlays[i].result?.description || "").slice(0, 70)}`);
     await pipeline.onGumbo(slim);
-    await new Promise((r) => setTimeout(r, 3000 / speed));
+    await new Promise((r) => setTimeout(r, sleepMs));
   }
   console.log(`[scenario:${sc.name}] done`);
 }
