@@ -414,9 +414,60 @@ def web_files(filename):
 def hls_files(filename):
     return send_from_directory("hls", filename)
 
-# TODO(SSE): add /events SSE endpoint that streams {balls,strikes,outs,runners}
-# to the frontend whenever the pipeline observes a state change.
-# Frontend element ids are in web/index.html with data-sse-* attributes.
+# ---------- SSE live game state ----------
+# Pipeline POSTs each enriched play to /state. /events streams those snapshots
+# (plus a heartbeat every SSE_HEARTBEAT_SECS) to any connected frontend so the
+# count/diamond can update without polling.
+import json as _json
+
+SSE_HEARTBEAT_SECS = 15
+_state_lock = threading.Lock()
+_state_cond = threading.Condition(_state_lock)
+_last_state: dict = {}
+_state_version = 0  # bumped on every /state update so SSE generators wake up
+
+@app.route("/state", methods=["POST"])
+def post_state():
+    global _last_state, _state_version
+    body = request.get_json(force=True, silent=True) or {}
+    with _state_cond:
+        _last_state = body
+        _state_version += 1
+        _state_cond.notify_all()
+    return jsonify({"ok": True, "version": _state_version})
+
+@app.route("/events")
+def events():
+    def stream():
+        seen = -1
+        # Emit whatever we know right now so a late-connecting client doesn't
+        # see a stale placeholder.
+        with _state_cond:
+            if _last_state:
+                yield f"data: {_json.dumps(_last_state)}\n\n"
+                seen = _state_version
+        while True:
+            with _state_cond:
+                # Wait up to heartbeat interval for a new state, then fall
+                # through and send a comment-line heartbeat to keep the
+                # connection alive through proxies.
+                _state_cond.wait_for(lambda: _state_version != seen, timeout=SSE_HEARTBEAT_SECS)
+                if _state_version != seen:
+                    payload = _json.dumps(_last_state)
+                    seen = _state_version
+                else:
+                    payload = None
+            if payload is not None:
+                yield f"data: {payload}\n\n"
+            else:
+                yield ": heartbeat\n\n"
+    headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # disable buffering on nginx-style proxies
+    }
+    return Response(stream(), headers=headers)
 
 @app.route("/health")
 def health():
@@ -425,6 +476,7 @@ def health():
         "backend": TTS_BACKEND,
         "queue_depth": len(files),
         "hls_running": hls_thread is not None and hls_thread.is_alive(),
+        "state_version": _state_version,
     })
 
 @app.route("/start_hls", methods=["POST"])

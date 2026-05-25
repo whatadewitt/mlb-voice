@@ -72,6 +72,62 @@
 
   applyVolume();
 
+  // ── Live state via SSE ────────────────────────────────────────
+  // Server pushes a snapshot every time the pipeline observes a new play.
+  // Snapshot shape: { balls, strikes, outs, runners, batter, pitcher, ... }
+  const pipRoots = {
+    balls: document.querySelector('[data-sse-balls]'),
+    strikes: document.querySelector('[data-sse-strikes]'),
+    outs: document.querySelector('[data-sse-outs]'),
+  };
+  const diamond = document.querySelector('[data-sse-runners]');
+  const atBatPlayer = document.querySelector('.at-bat .player');
+
+  function setPips(kind, count) {
+    const root = pipRoots[kind];
+    if (!root) return;
+    const total = root.children.length;
+    const filled = Math.max(0, Math.min(total, count | 0));
+    for (let i = 0; i < total; i++) {
+      root.children[i].className = i < filled ? `pip filled ${kind}` : 'pip';
+    }
+    root.setAttribute(`data-sse-${kind}`, String(filled));
+  }
+
+  function setRunners(runners) {
+    if (!diamond) return;
+    const occupied = new Set((runners || []).map((n) => Number(n)));
+    const byBase = { 1: 'first', 2: 'second', 3: 'third' };
+    for (const [n, name] of Object.entries(byBase)) {
+      const base = diamond.querySelector(`.base.${name}`);
+      if (!base) continue;
+      base.classList.toggle('occupied', occupied.has(Number(n)));
+    }
+    diamond.setAttribute('data-sse-runners', [...occupied].sort().join(','));
+  }
+
+  function applyState(s) {
+    if (!s || typeof s !== 'object') return;
+    if ('balls' in s) setPips('balls', s.balls);
+    if ('strikes' in s) setPips('strikes', s.strikes);
+    if ('outs' in s) setPips('outs', s.outs);
+    if ('runners' in s) setRunners(s.runners);
+    if (atBatPlayer && s.batter) atBatPlayer.textContent = s.batter;
+  }
+
+  if (typeof EventSource !== 'undefined') {
+    const es = new EventSource('/events');
+    es.onmessage = (ev) => {
+      try { applyState(JSON.parse(ev.data)); }
+      catch (e) { console.warn('SSE parse failed', e, ev.data); }
+    };
+    es.onerror = () => {
+      // EventSource auto-reconnects on transient errors; only log so we don't
+      // tear the connection down.
+      console.debug('SSE transient error; browser will reconnect');
+    };
+  }
+
   // ── Visualizer (decorative) ───────────────────────────────────
   const ctx = canvas.getContext('2d');
   const BARS = 56;

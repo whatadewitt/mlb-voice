@@ -24,6 +24,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   const highlightDet = new HighlightDetector();
   const adLib = new AdLibrary();
   const adUrl = voiceUrl.replace("/generate", "/enqueue_ad");
+  const stateUrl = voiceUrl.replace("/generate", "/state");
 
   let priorHalfInning = null;
 
@@ -34,6 +35,31 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
     async onGumbo(gumbo) {
       const enriched = await gameState.enrich(gumbo);
       const current = { inning: enriched.inning, half: enriched.half };
+
+      // Push live state to the SSE channel so the frontend count/diamond
+      // updates the moment the pipeline observes a new play, instead of
+      // waiting on the audio to land. Fire-and-forget; the demo must keep
+      // running even if the frontend isn't connected.
+      const runners = [];
+      if (enriched.runners?.first) runners.push(1);
+      if (enriched.runners?.second) runners.push(2);
+      if (enriched.runners?.third) runners.push(3);
+      const statePayload = {
+        balls: enriched.balls,
+        strikes: enriched.strikes,
+        outs: enriched.outs,
+        runners,
+        inning: enriched.inning,
+        half: enriched.half,
+        batter: enriched.batter?.name ?? "",
+        pitcher: enriched.pitcher?.name ?? "",
+        score: enriched.score,
+      };
+      fetch(stateUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(statePayload),
+      }).catch((e) => logger.error("state_post_failed", { reason: String(e) }));
       const halfInningEnded =
         priorHalfInning !== null &&
         (priorHalfInning.inning !== current.inning || priorHalfInning.half !== current.half);
