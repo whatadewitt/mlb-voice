@@ -7,6 +7,7 @@ import { HalfInningMemory } from "./memory/halfInningMemory.js";
 import { TouchedStorylines } from "./memory/touchedStorylines.js";
 import { ScriptGenerator } from "./scriptGenerator/index.js";
 import { buildPitchInput, generatePitchScript } from "./scriptGenerator/perPitch.js";
+import { generateIntroScript } from "./scriptGenerator/intro.js";
 import { HighlightDetector } from "./highlightDetector.js";
 import { AdLibrary } from "./adLibrary.js";
 import { RuntimeLog } from "./runtimeLog.js";
@@ -39,6 +40,34 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
   const buildKeywordIds = ({ activeThreads }) =>
     activeThreads.map((t) => ({ id: `thread:${t.id}`, kind: "thread", keywords: [t.id.replaceAll("_", " "), (t.hint ?? "").toLowerCase().slice(0, 30)] }));
 
+  // Lifted to the closure so onGumbo and onNewBatter share the same logic.
+  // Batter line BEFORE this PA — what TV captions show when the camera pans to
+  // the batter starting the at-bat. Walks/HBP/sacs are PAs but not at-bats and
+  // don't count toward "X-for-Y".
+  const HIT_EVENTS = new Set(["single", "double", "triple", "home_run"]);
+  const NON_AB_EVENTS = new Set([
+    "walk", "intent_walk", "intentional_walk", "hit_by_pitch",
+    "sac_fly", "sac_bunt", "sac_fly_double_play",
+    "sacrifice_bunt_double_play", "catcher_interf",
+  ]);
+  const batterLineBefore = (gumbo, batterId) => {
+    const allPlays = gumbo?.liveData?.plays?.allPlays ?? [];
+    const currentAtBatIndex = gumbo?.liveData?.plays?.currentPlay?.about?.atBatIndex;
+    if (!batterId || currentAtBatIndex == null) return null;
+    let ab = 0, hits = 0, hr = 0;
+    for (const p of allPlays) {
+      if (p.about?.atBatIndex == null || p.about.atBatIndex >= currentAtBatIndex) continue;
+      if (p.matchup?.batter?.id !== batterId) continue;
+      const evt = p.result?.eventType;
+      if (!evt || NON_AB_EVENTS.has(evt)) continue;
+      ab++;
+      if (HIT_EVENTS.has(evt)) hits++;
+      if (evt === "home_run") hr++;
+    }
+    if (ab === 0 && hits === 0) return null;
+    return `${hits}-for-${ab}${hr > 0 ? ", HR" : ""}`;
+  };
+
   return {
     async onGumbo(gumbo) {
       const enriched = await gameState.enrich(gumbo);
@@ -67,12 +96,6 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       const allPlays = gumbo?.liveData?.plays?.allPlays ?? [];
       const cp = gumbo?.liveData?.plays?.currentPlay;
       const currentAtBatIndex = cp?.about?.atBatIndex;
-      const HIT_EVENTS = new Set(["single", "double", "triple", "home_run"]);
-      const NON_AB_EVENTS = new Set([
-        "walk", "intent_walk", "intentional_walk", "hit_by_pitch",
-        "sac_fly", "sac_bunt", "sac_fly_double_play",
-        "sacrifice_bunt_double_play", "catcher_interf",
-      ]);
       // Score: AFTER the current play resolves (matches what a TV broadcast
       // would show). Fall back to the most recent prior play if the current
       // one has no result yet.
@@ -91,24 +114,6 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
           }
         }
       }
-      // Batter line BEFORE this PA — what TV captions show when the camera
-      // pans to the batter starting the at-bat. Walks/HBP/sacs are PAs but
-      // not at-bats and don't count toward "X-for-Y".
-      const batterLineBefore = (batterId) => {
-        if (!batterId || currentAtBatIndex == null) return null;
-        let ab = 0, hits = 0, hr = 0;
-        for (const p of allPlays) {
-          if (p.about?.atBatIndex == null || p.about.atBatIndex >= currentAtBatIndex) continue;
-          if (p.matchup?.batter?.id !== batterId) continue;
-          const evt = p.result?.eventType;
-          if (!evt || NON_AB_EVENTS.has(evt)) continue;
-          ab++;
-          if (HIT_EVENTS.has(evt)) hits++;
-          if (evt === "home_run") hr++;
-        }
-        if (ab === 0 && hits === 0) return null;  // first PA: nothing to show yet
-        return `${hits}-for-${ab}${hr > 0 ? ", HR" : ""}`;
-      };
       // Pitcher pitches: count all pitch events through current play (the
       // pitcher's count goes up with each pitch they throw, including those
       // already in the current PA).
@@ -122,7 +127,7 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         }
         return n > 0 ? n : null;
       };
-      const batterLine = batterLineBefore(enriched.batter?.id);
+      const batterLine = batterLineBefore(gumbo, enriched.batter?.id);
       const pitcherPitches = pitcherPitchesThrough(enriched.pitcher?.id);
       const statePayload = {
         balls: enriched.balls,
@@ -207,6 +212,48 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
       logger.stage("script", { input: { play_id: enriched.play_id }, output: { classification: verdict.classification }, latency_ms: 0 });
 
       // Post to TTS server.
+      try {
+        await fetch(voiceUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: script, voice_set: "broadcaster" }),
+        });
+      } catch (e) {
+        logger.error("voice_post_failed", { reason: String(e) });
+      }
+    },
+
+    // Batter intro. Called by the PER_PITCH runner BEFORE walking pitch events
+    // so the listener hears "Steer steps in, 1-for-2..." while the batter walks
+    // up — not at the end of the at-bat folded into the PA-result call. No-op
+    // if the batter hasn't changed since the last call. Advances lastBatterId,
+    // so the subsequent onGumbo PA-result call sees isNewBatter=false and
+    // doesn't double-announce.
+    async onNewBatter(gumbo) {
+      const cp = gumbo?.liveData?.plays?.currentPlay;
+      const batter = cp?.matchup?.batter;
+      const batterId = batter?.id ?? null;
+      if (batterId == null || batterId === lastBatterId) return;
+      const batterLine = batterLineBefore(gumbo, batterId);
+      lastBatterId = batterId;
+
+      logger.info("batter_intro_observed", {
+        play_idx: cp?.about?.atBatIndex,
+        batter: batter?.fullName,
+        batter_line: batterLine,
+      });
+
+      if (UI_ONLY) return;
+
+      const script = await generateIntroScript({
+        openai,
+        model: process.env.SCRIPT_MODEL || "gpt-5",
+        batterName: batter?.fullName,
+        batterLine,
+        logger,
+      });
+      if (!script) return;
+
       try {
         await fetch(voiceUrl, {
           method: "POST",

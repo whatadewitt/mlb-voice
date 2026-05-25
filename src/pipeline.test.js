@@ -138,3 +138,80 @@ describe("buildPipeline onPitchEvent", () => {
     }
   });
 });
+
+describe("buildPipeline onNewBatter", () => {
+  it("posts an intro script to /generate on first call (new batter)", async () => {
+    const create = vi.fn().mockResolvedValue({ choices: [{ message: { content: "[S1] Tatis steps in. [S2]" } }] });
+    const openai = { chat: { completions: { create } } };
+    const pipeline = buildPipeline({ year: 2025, runDir, openai, voiceUrl: "http://localhost:5025/generate" });
+
+    await pipeline.onNewBatter(samplePitchGumbo());
+
+    expect(create).toHaveBeenCalledTimes(1);
+    const system = create.mock.calls[0][0].messages[0].content;
+    expect(system).toMatch(/announcing a new batter/i);
+    const generateCall = fetchSpy.mock.calls.find(([url]) => url.endsWith("/generate"));
+    expect(generateCall, "/generate POST was made").toBeTruthy();
+    const body = JSON.parse(generateCall[1].body);
+    expect(body.text).toMatch(/\[S1\]/);
+    expect(body.text).toContain("Tatis");
+  });
+
+  it("is a no-op when called again with the same batter (no second LLM call, no second /generate)", async () => {
+    const create = vi.fn().mockResolvedValue({ choices: [{ message: { content: "[S1] Tatis steps in. [S2]" } }] });
+    const openai = { chat: { completions: { create } } };
+    const pipeline = buildPipeline({ year: 2025, runDir, openai, voiceUrl: "http://localhost:5025/generate" });
+
+    await pipeline.onNewBatter(samplePitchGumbo());
+    await pipeline.onNewBatter(samplePitchGumbo()); // same batter
+
+    expect(create).toHaveBeenCalledTimes(1);
+    const generateCalls = fetchSpy.mock.calls.filter(([url]) => url.endsWith("/generate"));
+    expect(generateCalls).toHaveLength(1);
+  });
+
+  it("fires again when the batter changes", async () => {
+    const create = vi.fn().mockResolvedValue({ choices: [{ message: { content: "[S1] Player steps in. [S2]" } }] });
+    const openai = { chat: { completions: { create } } };
+    const pipeline = buildPipeline({ year: 2025, runDir, openai, voiceUrl: "http://localhost:5025/generate" });
+
+    await pipeline.onNewBatter(samplePitchGumbo());
+    const g2 = samplePitchGumbo();
+    g2.liveData.plays.currentPlay.matchup.batter = { id: 999, fullName: "Trevino" };
+    await pipeline.onNewBatter(g2);
+
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("advances lastBatterId so a subsequent onGumbo doesn't double-announce the intro", async () => {
+    // We don't run onGumbo here (it pulls in StatcastClient HTTP + gameState
+    // enrichment), but onNewBatter advancing lastBatterId is the contract we
+    // rely on. Calling onNewBatter twice in a row with the same batter is the
+    // proxy: if lastBatterId wasn't advanced, the second call would re-fire.
+    const create = vi.fn().mockResolvedValue({ choices: [{ message: { content: "[S1] Steps in. [S2]" } }] });
+    const openai = { chat: { completions: { create } } };
+    const pipeline = buildPipeline({ year: 2025, runDir, openai, voiceUrl: "http://localhost:5025/generate" });
+
+    await pipeline.onNewBatter(samplePitchGumbo());
+    await pipeline.onNewBatter(samplePitchGumbo());
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI_ONLY skips the LLM call (no /generate POST)", async () => {
+    process.env.UI_ONLY = "1";
+    try {
+      const create = vi.fn();
+      const openai = { chat: { completions: { create } } };
+      const pipeline = buildPipeline({ year: 2025, runDir, openai, voiceUrl: "http://localhost:5025/generate" });
+
+      await pipeline.onNewBatter(samplePitchGumbo());
+
+      expect(create).not.toHaveBeenCalled();
+      const generateCall = fetchSpy.mock.calls.find(([url]) => url.endsWith("/generate"));
+      expect(generateCall).toBeUndefined();
+    } finally {
+      delete process.env.UI_ONLY;
+    }
+  });
+});

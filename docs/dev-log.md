@@ -5,6 +5,23 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-25 — PER_PITCH: batter intros fire BEFORE the first pitch (branch: 11labs-migration)
+
+In PER_PITCH mode the intro was landing at the end of the at-bat — glued to the PA-result call via `isNewBatter` going into `ScriptGenerator.generate`. That's awkward narratively: "...and Steer doubles to left. Spencer Steer, 1-for-2 on the night." The natural cadence is the other way around — "Steer steps in, 1-for-2 on the night... and the first pitch is a fastball, low and away... [pitches]... and Steer doubles to left."
+
+New module `src/scriptGenerator/intro.js` carries the standalone intro generator: tiny system prompt ("ONE [S1] line, 6-12 words, name the batter, weave in the line if provided, no setup connectives"), `buildIntroMessages` + `generateIntroScript` mirroring the perPitch shape. Falls back to a deterministic template (`[S1] Steer, 1-for-2, steps in. [S2]`) on LLM failure so the broadcast never goes silent on a missed intro.
+
+New pipeline method `onNewBatter(gumbo)` reads `currentPlay.matchup.batter.id`, no-ops if it equals `lastBatterId`, otherwise computes `batterLineBefore(gumbo, batterId)` (lifted from inside `onGumbo` to a closure-level helper so both methods share the logic), generates the intro script, posts it to TTS, and advances `lastBatterId`. Because the advance happens here, the subsequent PA-level `onGumbo` sees `isNewBatter=false` and does NOT also pack the intro into the result call — no double-announce. `UI_ONLY` skips the LLM call but still logs `batter_intro_observed` so the runner remains observable.
+
+`src/scenarios/run.js` in the PER_PITCH branch now calls `pipeline.onNewBatter(slim)` BEFORE walking pitches, with the same `PER_PITCH_SLEEP_MS` gap between the intro and the first pitch. Non-PER_PITCH mode is unchanged: the runner doesn't call `onNewBatter`, the intro stays folded into the PA-result call (there's no good "start" beat to attach it to in PA mode).
+
+12 new tests across `src/scriptGenerator/intro.test.js` (6 — build messages, generate happy path, LLM-throw fallback, malformed-content fallback, missing-batterName skip, temperature gating for gpt-5) and `src/pipeline.test.js` (5 onNewBatter — first call, no-op on same batter, fires on batter change, lastBatterId advance, UI_ONLY skip). Smoke-confirmed against the first 5 plays of `SDatTOR.json`: each new batter (De La Cruz, Hays, Steer, Stephenson, Trevino) gets a `batter_intro_observed` log entry BEFORE the per-pitch events. Full suite 111/111.
+
+**What I tried and dropped**
+Considered also splitting PA-level mode's intro out of the result call so the intro fires separately even when PER_PITCH is off. Decided against — in PA mode the entire at-bat collapses into one script anyway; there's no natural beat where the camera "pans up to the batter" before the result is known (the runner replays a fixture, not a live tick). The combined script reads fine; only PER_PITCH has the cadence room for a real intro-then-pitches flow.
+
+---
+
 ## 2026-05-25 — PER_PITCH: skip resolving pitch on walks / Ks / HBP (branch: 11labs-migration)
 
 Followup to the PER_PITCH ship from earlier this morning. The known limitation called out in `docs/demo-polish.md` was that walks and strikeouts have no "In play, ..." terminating event, so the existing per-pitch filter missed the resolving pitch and the listener got both "Ball four, high" and "Stephenson walks" stacked back-to-back. Same for K3 and HBP.

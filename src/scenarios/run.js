@@ -48,6 +48,14 @@ export async function runScenario(scenarioPath) {
     console.log(`[scenario:${sc.name}] play ${i}: ${(allPlays[i].result?.description || "").slice(0, 70)}`);
 
     if (PER_PITCH && pipeline.onPitchEvent) {
+      // Batter intro fires BEFORE pitches so the listener hears "Steer steps
+      // in, 1-for-2..." while the batter walks up. No-op if the batter hasn't
+      // changed since the last play; the intro also advances lastBatterId so
+      // the PA-result onGumbo below doesn't double-announce.
+      if (pipeline.onNewBatter) {
+        await pipeline.onNewBatter(slim);
+        await new Promise((r) => setTimeout(r, perPitchSleepMs));
+      }
       const events = allPlays[i].playEvents || [];
       // The terminating pitch's PA-level result call still runs through
       // onGumbo (below); onPitchEvent itself returns early for "in play" so we

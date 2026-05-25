@@ -31,6 +31,13 @@ in place for a release or two so we can see what's recently shipped.
     `result.eventType` + last-pitch detection in `buildPitchInput`).
     The PA-level call carries the "Stephenson walks" / "strikes out
     swinging" line on its own.
+  - Resolved 2026-05-25: batter intros now fire BEFORE the first pitch
+    of each new at-bat in PER_PITCH mode via `pipeline.onNewBatter` —
+    "Steer steps in, 1-for-2" plays while the batter walks up, not
+    glued onto the end of the PA-result call. The intro also advances
+    `lastBatterId` so the PA-level `onGumbo` doesn't double-announce.
+    In non-PER_PITCH mode the intro is still folded into the PA-result
+    call (no good "start" beat in that mode).
 
 - [ ] **Verify per-line elevenlabs emit feels snappier.** Code shipped
   2026-05-24. With a multi-line broadcast script, line 1 audio should
