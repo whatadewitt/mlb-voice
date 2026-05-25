@@ -466,20 +466,35 @@ def hls_files(filename):
 import json as _json
 
 SSE_HEARTBEAT_SECS = 15
+# The pipeline observes a play and POSTs /state instantly, but the audio for
+# that play has to travel queue → ffmpeg → playlist → player buffer before the
+# listener hears it (typically 6–10s). SSE_DELAY pushes the SSE publication
+# back by that much so the on-screen count/diamond stays roughly in sync with
+# what the announcers are saying. Set to 0 to publish immediately.
+SSE_DELAY = float(os.environ.get("SSE_DELAY", "7"))
 _state_lock = threading.Lock()
 _state_cond = threading.Condition(_state_lock)
 _last_state: dict = {}
-_state_version = 0  # bumped on every /state update so SSE generators wake up
+_state_version = 0  # bumped on every published state so SSE generators wake up
+
+def _publish_state(state: dict) -> None:
+    global _last_state, _state_version
+    with _state_cond:
+        _last_state = state
+        _state_version += 1
+        _state_cond.notify_all()
 
 @app.route("/state", methods=["POST"])
 def post_state():
-    global _last_state, _state_version
     body = request.get_json(force=True, silent=True) or {}
-    with _state_cond:
-        _last_state = body
-        _state_version += 1
-        _state_cond.notify_all()
-    return jsonify({"ok": True, "version": _state_version})
+    if SSE_DELAY <= 0:
+        _publish_state(body)
+    else:
+        # Timer fires once after SSE_DELAY seconds in its own thread. Order is
+        # preserved because timers scheduled with the same delay fire in the
+        # order they were started.
+        threading.Timer(SSE_DELAY, _publish_state, args=(body,)).start()
+    return jsonify({"ok": True})
 
 @app.route("/events")
 def events():

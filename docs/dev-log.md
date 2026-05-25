@@ -5,6 +5,19 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-24 — SSE_DELAY for UI/audio alignment (branch: 11labs-migration)
+
+First listen of the SSE-enabled demo showed the count pips and base diamond updating ~7–10s *ahead* of what the announcers were saying. The pipeline POSTs `/state` the instant `gameState.enrich(gumbo)` finishes, but the audio for that play has to travel through queue → ffmpeg → playlist → player buffer before the listener hears it — typically 6–10s of pipe. So the SSE channel races the audio chain and wins by a lot.
+
+Quick fix: `/state` handler no longer publishes immediately. It schedules `_publish_state(body)` via `threading.Timer(SSE_DELAY, ...)` so the SSE notify is deferred by `SSE_DELAY` seconds (env var, default 7). Timers fire in scheduled order so payload sequencing is preserved across rapid POSTs. `SSE_DELAY=0` restores the old immediate-publish path for pipeline debugging. Smoke confirmed both: 1.5s delay produces 1.51s and 1.62s arrival times for two POSTs spaced 100ms apart; SSE_DELAY=0 delivers in <3ms.
+
+This is the "simple knob" version. The "right" version would tie state publication to the segmenter consuming the matching audio file (using the per-line emit filename as a token), which removes the guess from the equation but requires plumbing through `/generate` and the segmenter loop. Deferred; the knob is probably good enough for Friday.
+
+**What I tried and dropped**
+First test had the SSE GET *after* the `/state` POST, which exercised the initial-state-on-connect path (`_last_state` was still `{}` because the POST was sitting in its Timer) and made it look like the delay wasn't applied. Switched to connecting SSE first, then POSTing — confirmed the deferred publication works as expected.
+
+---
+
 ## 2026-05-24 — Per-line emit for elevenlabs broadcaster (branch: 11labs-migration)
 
 Followup to the elevenlabs switch: `tts_elevenlabs` no longer concatenates every line of a script into one WAV before dropping it in `queue/`. For `voice_set="broadcaster"` it now writes each line as its own WAV (`play-<ts>-00.wav`, `-01.wav`, …) directly into `queue/` as soon as that line's API call returns, then returns the list of paths so the `/generate` handler can respond `{files, lines}` instead of the legacy `{file}`. Filenames sort in playback order because `<ts>` is fixed per `/generate` call and `NN` increments. `voice_set="ad_announcer"` still concatenates into a single file at `out_path` (scripts/renderAds.js copies it into `ads/<id>.wav` and would break on multi-file output), returning `None`. The `/generate` handler distinguishes by checking `isinstance(result, list)`; if so it skips the `tmp_path → out_path` rename (the backend already wrote final names directly) and cleans up any stray `.part` left behind. Per-line failure is now non-fatal — if line 3 of 5 fails, the broadcast plays 1–2 and 4–5 with a cut in the middle, rather than dropping the whole script.

@@ -11,12 +11,11 @@ in place for a release or two so we can see what's recently shipped.
 
 ## Open
 
-- [ ] **Verify SSE live updates in the browser.** Code shipped 2026-05-24
-  but not yet eyeballed against a running stream. When you next run
-  `npm run demo`: confirm count pips / diamond / at-bat name update as
-  each play hits the pipeline (and *lead* the audio by a few seconds,
-  since the wav queue lags). DevTools → Network → `events` should show
-  `data:` frames per play and `: heartbeat` lines every ~15s when idle.
+- [ ] **Tune SSE_DELAY to match player buffer.** Default is 7s; if UI
+  still leads or lags audio, set `$env:SSE_DELAY="N"` (PowerShell) or
+  `SSE_DELAY=N` (bash) before `npm run demo` until count/diamond matches
+  what the announcers are saying. Set to 0 for the old immediate-publish
+  behavior (useful when debugging the pipeline).
 
 - [ ] **Verify per-line elevenlabs emit feels snappier.** Code shipped
   2026-05-24. With a multi-line broadcast script, line 1 audio should
