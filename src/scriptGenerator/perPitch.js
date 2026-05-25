@@ -36,6 +36,27 @@ function lastPitchIndex(events) {
   return -1;
 }
 
+// Return the last playEvent in this PA whose count was shown to the user via
+// the per-pitch path — i.e., the last isPitch event that wasn't "In play, ..."
+// and wasn't the resolving pitch of a walk / K / HBP. The pipeline uses this
+// on the PA wrap to keep the displayed count consistent with the final
+// per-pitch push (Gumbo's play.count after resolution can disagree).
+export function lastCallablePitch(currentPlay) {
+  const events = currentPlay?.playEvents ?? [];
+  const resolvingIdx = NON_CONTACT_RESOLUTIONS.has(currentPlay?.result?.eventType)
+    ? lastPitchIndex(events)
+    : -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i];
+    if (!ev?.isPitch) continue;
+    const call = ev.details?.call?.description || ev.details?.description || "";
+    if (/^in play/i.test(call)) continue;
+    if (i === resolvingIdx) continue;
+    return ev;
+  }
+  return null;
+}
+
 // Build the per-pitch prompt input from a raw GUMBO play + the event index.
 // Returns null when the event isn't a callable pitch (skip pickoffs, mound
 // visits, etc.). Callers use the null return as a signal to skip.

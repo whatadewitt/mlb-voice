@@ -6,7 +6,7 @@ import { GameSummary } from "./memory/gameSummary.js";
 import { HalfInningMemory } from "./memory/halfInningMemory.js";
 import { TouchedStorylines } from "./memory/touchedStorylines.js";
 import { ScriptGenerator } from "./scriptGenerator/index.js";
-import { buildPitchInput, generatePitchScript } from "./scriptGenerator/perPitch.js";
+import { buildPitchInput, generatePitchScript, lastCallablePitch } from "./scriptGenerator/perPitch.js";
 import { generateIntroScript } from "./scriptGenerator/intro.js";
 import { HighlightDetector } from "./highlightDetector.js";
 import { AdLibrary } from "./adLibrary.js";
@@ -68,6 +68,29 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
     return `${hits}-for-${ab}${hr > 0 ? ", HR" : ""}`;
   };
 
+  // Pitcher pitch count through the current play. If throughEventIdx is given,
+  // pitches with playEvent index > throughEventIdx in the CURRENT play are
+  // excluded — used by onPitchEvent so the count reflects the pitch just
+  // thrown, not future pitches already present in the snapshot.
+  const pitcherPitchesThrough = (gumbo, pitcherId, throughEventIdx = null) => {
+    const allPlays = gumbo?.liveData?.plays?.allPlays ?? [];
+    const currentAtBatIndex = gumbo?.liveData?.plays?.currentPlay?.about?.atBatIndex;
+    if (!pitcherId || currentAtBatIndex == null) return null;
+    let n = 0;
+    for (const p of allPlays) {
+      if (p.about?.atBatIndex == null || p.about.atBatIndex > currentAtBatIndex) continue;
+      if (p.matchup?.pitcher?.id !== pitcherId) continue;
+      const isCurrent = p.about.atBatIndex === currentAtBatIndex;
+      const events = p.playEvents || [];
+      for (let i = 0; i < events.length; i++) {
+        if (!events[i]?.isPitch) continue;
+        if (isCurrent && throughEventIdx != null && i > throughEventIdx) continue;
+        n++;
+      }
+    }
+    return n > 0 ? n : null;
+  };
+
   return {
     async onGumbo(gumbo) {
       const enriched = await gameState.enrich(gumbo);
@@ -114,24 +137,21 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
           }
         }
       }
-      // Pitcher pitches: count all pitch events through current play (the
-      // pitcher's count goes up with each pitch they throw, including those
-      // already in the current PA).
-      const pitcherPitchesThrough = (pitcherId) => {
-        if (!pitcherId || currentAtBatIndex == null) return null;
-        let n = 0;
-        for (const p of allPlays) {
-          if (p.about?.atBatIndex == null || p.about.atBatIndex > currentAtBatIndex) continue;
-          if (p.matchup?.pitcher?.id !== pitcherId) continue;
-          for (const ev of p.playEvents || []) if (ev.isPitch) n++;
-        }
-        return n > 0 ? n : null;
-      };
       const batterLine = batterLineBefore(gumbo, enriched.batter?.id);
-      const pitcherPitches = pitcherPitchesThrough(enriched.pitcher?.id);
+      const pitcherPitches = pitcherPitchesThrough(gumbo, enriched.pitcher?.id);
+      // In PER_PITCH mode, the per-pitch pushes already advanced the count
+      // pitch-by-pitch. Use the last callable pitch's count to keep the PA
+      // wrap consistent with what the user just saw — the normalizer's
+      // pre-event math can land a notch lower than the last per-pitch push
+      // for walks/Ks/HBP (depends on whether Gumbo's play.count was reset
+      // by the resolving event), which makes the count pip flicker.
+      const PER_PITCH = !!process.env.PER_PITCH;
+      const lastPitch = PER_PITCH ? lastCallablePitch(cp) : null;
+      const displayBalls = lastPitch?.count?.balls ?? enriched.balls;
+      const displayStrikes = lastPitch?.count?.strikes ?? enriched.strikes;
       const statePayload = {
-        balls: enriched.balls,
-        strikes: enriched.strikes,
+        balls: displayBalls,
+        strikes: displayStrikes,
         outs: enriched.outs,
         runners,
         inning: enriched.inning,
@@ -302,7 +322,9 @@ export function buildPipeline({ year, runDir, openai, voiceUrl }) {
         inning: cp?.about?.inning,
         half,
         batter: batter?.fullName ?? "",
+        batter_line: batterLineBefore(gumbo, batter?.id),
         pitcher: pitcher?.fullName ?? "",
+        pitcher_pitches: pitcherPitchesThrough(gumbo, pitcher?.id, eventIdx),
         score: {
           home: ls.teams?.home?.runs ?? 0,
           away: ls.teams?.away?.runs ?? 0,
