@@ -56,7 +56,15 @@ let fetchSpy;
 let runDir;
 
 beforeEach(() => {
-  fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+  // /generate now returns total_dur so the pipeline can block on audio
+  // playback; mock both .json() and .text() so postVoiceScript and the
+  // error path both behave like a real fetch response.
+  fetchSpy = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ status: "queued", total_dur: 0 }),
+    text: async () => "",
+  });
   vi.stubGlobal("fetch", fetchSpy);
   runDir = mkdtempSync(join(tmpdir(), "pipeline-test-"));
 });

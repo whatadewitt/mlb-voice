@@ -87,6 +87,12 @@ describe("home_run_recent", () => {
     const t = e.observe(samplePlay({ result_text: "Walk." }));
     expect(t.find((x) => x.id === "home_run_recent")).toBeTruthy();
   });
+
+  it("does NOT activate on the HR play itself (the play that's being scored isn't 'already' in the inning)", () => {
+    const e = new NarrativeThreadEngine();
+    const t = e.observe(samplePlay({ result_text: "Vlad homers (6) to left." }));
+    expect(t.find((x) => x.id === "home_run_recent")).toBeFalsy();
+  });
 });
 
 describe("streak_at_plate", () => {

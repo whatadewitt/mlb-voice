@@ -33,11 +33,18 @@ export function normalize(gumbo, { priorSnapshot } = {}) {
     away_team: away.abbreviation,
   };
 
+  // Runners AFTER the current play resolves. Saved Gumbo snapshots are
+  // end-of-game, so linescore.offense reflects the FINAL runners on base
+  // (usually nobody), not what was true mid-game. The current play's
+  // matchup.postOn{First,Second,Third} fields carry the post-PA runner
+  // state for THIS play and are accurate for replay.
+  const m = currentPlay.matchup ?? {};
   const offense = linescore.offense ?? {};
+  const toRunner = (r) => r ? { id: r.id, name: r.fullName } : null;
   const runners = {
-    first: offense.first ? { id: offense.first.id, name: offense.first.fullName } : null,
-    second: offense.second ? { id: offense.second.id, name: offense.second.fullName } : null,
-    third: offense.third ? { id: offense.third.id, name: offense.third.fullName } : null,
+    first: toRunner(m.postOnFirst),
+    second: toRunner(m.postOnSecond),
+    third: toRunner(m.postOnThird),
   };
 
   const onDeck = offense.onDeck
