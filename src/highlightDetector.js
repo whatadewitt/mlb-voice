@@ -57,11 +57,25 @@ function curateStats(p, tier) {
   if (p.hit?.exit_velocity != null) {
     stats.push({ label: "Exit velocity", value: `${Math.round(p.hit.exit_velocity * 10) / 10} mph` });
   }
-  if (p.hit?.launch_angle != null) {
-    stats.push({ label: "Launch angle", value: `${Math.round(p.hit.launch_angle)}°` });
-  }
-  if (p.hit?.distance) {
+  // Launch angle is deliberately excluded — it's a Statcast-y term that the
+  // color analyst kept parroting ("a 32-degree launch angle off the bat") and
+  // it sounds like a data dump, not broadcast color. Exit velo and distance
+  // carry the same "how good was the contact" signal in plain language.
+  // Projected distance is only worth speaking on actual home runs. On a
+  // grounder it's nonsense ("grounded out, projected 47 feet"); on a routine
+  // fly-out it's a Statcast data dump nobody asked for. For deep fly balls
+  // that DIDN'T quite leave the yard, we surface a "near home run" flavor
+  // stat instead so the booth can flag the close call without reciting raw
+  // distance.
+  const isHR = /homer|home run/i.test(p.result_text || "");
+  const launchAngle = p.hit?.launch_angle;
+  if (p.hit?.distance && isHR) {
     stats.push({ label: "Projected distance", value: `${Math.round(p.hit.distance)} ft` });
+  } else if (!isHR && p.hit?.distance >= 350 && (launchAngle ?? 0) >= 20) {
+    stats.push({
+      label: "Near home run",
+      value: `caught at ${Math.round(p.hit.distance)} feet — that one had a chance to leave the yard`,
+    });
   }
   if (p.fielding?.catch_probability != null) {
     stats.push({ label: "Catch probability", value: `${Math.round(p.fielding.catch_probability)}%` });

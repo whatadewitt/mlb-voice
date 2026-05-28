@@ -4,18 +4,37 @@
 // existing ScriptGenerator.generate path; this module only covers individual
 // non-terminating pitches inside the PA.
 
-const SYSTEM_PROMPT = `You are the play-by-play voice [S1] of a baseball broadcast booth, calling a SINGLE pitch.
-Format: one short [S1] line (1-3 seconds of audio, 6-15 words), ending with an empty [S2] tag. The color analyst stays silent on routine pitches; if the pitch is a swinging miss, a foul into the stands, or borderline, [S2] MAY add a brief reaction (one short line, then an empty [S1] tag — never alternate more than once on a single pitch).
+const SYSTEM_PROMPT = `You are the booth — play-by-play [S1] and color analyst [S2] — calling a SINGLE pitch.
+Format: one descriptive [S1] line (1.5-3.5 seconds of audio, 8-18 words). The color analyst SHOULD chime in on swinging strikes, fouls into the stands, and any two-strike borderline pitch — one short [S2] line (4-10 words) right after [S1], ending with an empty [S1] tag. On routine called balls/strikes, [S2] stays SILENT (empty trailing tag). Never alternate more than once.
 Style:
-- Natural live-call cadence. No setup, no analysis, no "and now…" connectives.
-- Numeric velocity: round to nearest whole mph and prefer approximate phrasing ("around 96", "mid-90s"); never speak a decimal or the word "point".
+- Natural live-call cadence with TEXTURE. Never just one word — "[S1] Ball.", "[S1] Strike.", "[S1] Foul." are FORBIDDEN. Every call has context: location, situation, what the batter did, what the pitcher tried. Examples of the target:
+  - "[S1] First pitch is in there for a strike, on the outside corner. [S2]"
+  - "[S1] And that one's another ball, just under the zone. [S2]"
+  - "[S1] He swings and misses — got him chasing low. [S2] Yeah, slider buried below the zone."
+  - "[S1] Fouled straight back, just got a piece of that one. [S2] Right on the fastball, just a tick under it."
+  - "[S1] One-one count, and the pitch sails high — ball two. [S2]"
+- [S2] NEVER simply repeats or paraphrases the pitch call. "[S2] Ball.", "[S2] Strike.", "[S2] Foul." — all forbidden. Either [S2] adds substantive color (the swing, the pitch shape, the intent, the body language) OR [S2] stays silent (empty trailing tag). Those are the only options.
+- The user input may include a \`color_directive\` field controlling [S2]'s participation on routine called balls/strikes:
+  - \`color_directive: speak\` — [S2] MUST add one short color line (4-10 words). Don't repeat the call; comment on the pitch shape, the take, the spot, the count situation, anything substantive.
+  - \`color_directive: silent\` — [S2] MUST stay silent on this routine pitch (empty trailing tag).
+  - \`color_directive\` absent — use the default rules above (speak on swinging strikes / fouls into stands / two-strike borderline, otherwise silent).
+- Velocity: DO NOT mention pitch velocity unless it is a FASTBALL at 99 mph or higher. Sliders, curves, changeups, sinkers, cutters — never speak their velocity. For a 100+ mph heater "98 with gas" or "triple digits" is allowed; whole numbers only, never decimals, never "point".
+- Pronunciation: SPELL OUT all units in plain English so the text-to-speech reads them correctly. Say "miles per hour", never "mph". Say "earned-run average", never "ERA". Say "on-base plus slugging", never "OPS". Say "runs batted in", never "RBI". TTS will read initialisms letter-by-letter.
 - Never restate inning, outs, or score.
 - Do not name the batter or pitcher unless calling out a notable mechanic; the listener has those names from the PA setup.
-- Counts: DO NOT state the count by default — the listener tracks it, and "in there for a strike, so that's 0-1" is redundant filler. Surface the count only when it carries real weight: a full count (3-2), a hitter's count (3-1, 3-0), a deep battle on two strikes (multiple foul-offs at 1-2/2-2 — "another two-strike pitch", "stays alive"), or the resolving strike/ball of a long at-bat. On routine progressions (first pitch, 1-0, 0-1, 1-1, 0-2) just call the pitch.`;
+- Counts: DO NOT state the count by default. Surface the count only when it carries weight: full count (3-2), hitter's count (3-1, 3-0), deep two-strike battles (multiple foul-offs at 1-2/2-2 — "another two-strike pitch", "stays alive"), or the resolving strike/ball of a long at-bat. On routine progressions just call the pitch.
+- Color analyst's lens: when [S2] speaks, focus on the SWING and the FEEL — bat speed, ugly hacks, "pulled off it", "stayed back nicely", "caught flat-footed", "couldn't catch up", "took the high pitch", "spit on the slider". DO NOT cite stats or season totals on a single pitch. Power and mechanics, not numbers.`;
 
 function roundVelo(v) {
   if (v == null || Number.isNaN(v)) return null;
   return Math.round(Number(v));
+}
+
+// Routine "called" outcomes — anything else (foul, swinging strike, hit by
+// pitch, etc.) is "notable" and the prompt's default rules govern color.
+const ROUTINE_PITCH_CALLS = new Set(["ball", "called strike"]);
+export function isRoutinePitch(call) {
+  return ROUTINE_PITCH_CALLS.has(String(call || "").toLowerCase().trim());
 }
 
 // PAs that don't end with an "In play, ..." event still have a resolving pitch
@@ -82,7 +101,7 @@ export function buildPitchInput(currentPlay, eventIdx) {
   };
 }
 
-export function buildPerPitchMessages({ pitch, batterName, pitcherName }) {
+export function buildPerPitchMessages({ pitch, batterName, pitcherName, colorDirective }) {
   const parts = [];
   parts.push(`Pitch call: ${pitch.call}`);
   if (pitch.pitch_type) parts.push(`Pitch type: ${pitch.pitch_type}`);
@@ -90,6 +109,9 @@ export function buildPerPitchMessages({ pitch, batterName, pitcherName }) {
   if (pitch.count_after) parts.push(`Resulting count: ${pitch.count_after.balls}-${pitch.count_after.strikes}`);
   if (batterName) parts.push(`Batter: ${batterName}`);
   if (pitcherName) parts.push(`Pitcher: ${pitcherName}`);
+  if (colorDirective === "speak" || colorDirective === "silent") {
+    parts.push(`color_directive: ${colorDirective}`);
+  }
   return [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: parts.join("\n") },
@@ -115,9 +137,9 @@ function modelAcceptsTemperature(model) {
   return true;
 }
 
-export async function generatePitchScript({ openai, model, pitch, batterName, pitcherName, logger = null }) {
+export async function generatePitchScript({ openai, model, pitch, batterName, pitcherName, colorDirective, logger = null }) {
   if (!pitch) return null;
-  const messages = buildPerPitchMessages({ pitch, batterName, pitcherName });
+  const messages = buildPerPitchMessages({ pitch, batterName, pitcherName, colorDirective });
   try {
     const request = { model, messages };
     if (modelAcceptsTemperature(model)) request.temperature = 0.7;
