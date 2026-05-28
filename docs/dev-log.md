@@ -5,6 +5,36 @@ Reverse-chronological; newest entries on top. See spec §7 for the rules.
 
 ---
 
+## 2026-05-25 — `SCRIPT_MODEL=gpt-4o-mini` is the demo default (branch: 11labs-migration)
+
+The voice-pass smoke test exposed where the dead air actually lives in this pipeline. Timestamps from a real run on `gpt-5`:
+
+| stage                  | wall-clock gap  | what was happening                          |
+| ---------------------- | --------------- | ------------------------------------------- |
+| batter intro `/generate` | **34s**         | OpenAI gpt-5 script generation              |
+| per-pitch (called strike) | **24s**       | OpenAI gpt-5 script generation              |
+| PA-wrap (Vlad HR)       | **59s**         | OpenAI gpt-5 script generation              |
+| TTS (ElevenLabs)        | 0.47s           | flash_v2_5 stream                           |
+| HLS segmentation        | 1–2s            | ffmpeg wav → ts                             |
+
+The audio path is fast. The model is slow. `gpt-5`'s reasoning latency on a 12-message broadcaster prompt is dominating end-to-end pacing — so much so that with `PER_PITCH_SLEEP_MS=2000` the per-pitch sleep is irrelevant; the LLM call is the gate. The listener hears a ~3-second pitch call followed by 20–60 seconds of silence because the next script is still in OpenAI's queue.
+
+`SCRIPT_MODEL` was already wired through to every script-gen call site (`pipeline.js` PA wrap, `pipeline.js` intro, `pipeline.js` per-pitch, `gameSummary.js`) but defaulted to `gpt-5`. Switched the demo recommendation to `gpt-4o-mini`:
+
+```bash
+SCRIPT_MODEL=gpt-4o-mini SSE_DELAY=0 VOICE_URL=http://127.0.0.1:5025/generate PER_PITCH=1 PER_PITCH_SLEEP_MS=2000 npm run demo
+```
+
+Verified gaps drop from 20–60s to 0.5–4s per call. The pipeline is now bottlenecked on TTS + HLS segmentation, which is the natural ~3-second cadence we wanted in the first place.
+
+**Quality tradeoff worth naming.** `gpt-4o-mini` is more verbose by default — the Vlad HR PA-wrap came back as 8 lines / 673 chars versus `gpt-5`'s 2 lines / 316 chars on the same prompt. It reads fine, but the calls are longer. `gpt-4o` is the middle option: tighter than mini, still faster than gpt-5 (~3–6s per call). Decision deferred to demo-day taste.
+
+**Presentation angle.** Worth flagging in the deck: the "AI broadcaster" is two distinct latency stories. Script generation (LLM) is the dominant cost; voice synthesis (ElevenLabs flash) and HLS chunking are sub-second each. Picking the right model is a UX dial, not just a capability dial. The reasoning families (`gpt-5`, `o1`) buy nuance at a cost the live broadcast can't pay — for live cadence, the 4o family is the right tier. Future improvements (pre-generation on known data, streaming token-by-token to TTS) would lift the ceiling further but aren't on the demo path.
+
+No code change in this entry beyond the recommendation — the env var was already plumbed. Updated `docs/demo-polish.md` to call out the new default. Full suite 114/114.
+
+---
+
 ## 2026-05-25 — PER_PITCH: batter intros fire BEFORE the first pitch (branch: 11labs-migration)
 
 In PER_PITCH mode the intro was landing at the end of the at-bat — glued to the PA-result call via `isNewBatter` going into `ScriptGenerator.generate`. That's awkward narratively: "...and Steer doubles to left. Spencer Steer, 1-for-2 on the night." The natural cadence is the other way around — "Steer steps in, 1-for-2 on the night... and the first pitch is a fastball, low and away... [pitches]... and Steer doubles to left."
