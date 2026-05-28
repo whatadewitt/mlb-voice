@@ -42,33 +42,109 @@ export async function runScenario(scenarioPath) {
 
   console.log(`[scenario:${sc.name}] walking plays ${startIdx}..${endIdx - 1} of ${allPlays.length} from ${sc.source.game_json_fixture} (speed=${speed}, sleep=${sleepMs}ms${UI_ONLY ? " UI_ONLY floored" : ""}${PER_PITCH ? " PER_PITCH=1" : ""})`);
 
+  // Prime the UI with the right teams + starting score BEFORE the audio
+  // pipeline warms up, so the page doesn't sit on placeholder data while
+  // the first /generate call (LLM + TTS + HLS) lands.
+  if (pipeline.primeState && startIdx < allPlays.length) {
+    const primer = JSON.parse(JSON.stringify(gumbo));
+    primer.liveData.plays.currentPlay = allPlays[startIdx];
+    await pipeline.primeState(primer);
+  }
+
+  // Track the half-inning of the most recently completed play so we can
+  // detect a boundary BETWEEN iterations and fire the welcome-back call
+  // before the next batter intro. Initialized to the play before startIdx
+  // if it exists, so a scenario that opens mid-inning doesn't false-fire.
+  let priorPlayHalf = null;
+  let priorPlayInning = null;
+  if (startIdx > 0) {
+    const p = allPlays[startIdx - 1]?.about;
+    if (p) { priorPlayHalf = p.halfInning; priorPlayInning = p.inning; }
+  }
+
+  // Optional cold-open mid-PA. When set, the FIRST iteration walks playEvents
+  // starting from this event index instead of 0, and the batter intro is
+  // suppressed (the batter is already in the box mid-AB). Only applies to
+  // play[startIdx] — subsequent plays run normally from event 0.
+  const startPitchEventIndex = Math.max(0, Number(sc.source.start_pitch_event_index) || 0);
+  // Optional graceful end. When true, the LAST iteration only walks the
+  // FIRST per-pitch event (intro + one pitch) and then exits, skipping
+  // the PA wrap. Used for demos that should end shortly after a beat
+  // (e.g., "back from break, first pitch of the next at-bat, fade").
+  const lastPlayFirstPitchOnly = !!sc.source.last_play_first_pitch_only;
+
   for (let i = startIdx; i < endIdx; i++) {
     const slim = JSON.parse(JSON.stringify(gumbo));
     slim.liveData.plays.currentPlay = allPlays[i];
-    console.log(`[scenario:${sc.name}] play ${i}: ${(allPlays[i].result?.description || "").slice(0, 70)}`);
+    const about = allPlays[i].about || {};
+    const isMidPaColdOpen = i === startIdx && startPitchEventIndex > 0;
+    const isLastPlay = i === endIdx - 1;
+    console.log(`[scenario:${sc.name}] play ${i}: ${(allPlays[i].result?.description || "").slice(0, 70)}${isMidPaColdOpen ? ` (mid-PA cold open at event ${startPitchEventIndex})` : ""}`);
+
+    // Half-inning boundary detector: prior iteration's onGumbo enqueued and
+    // awaited an ad, the listener just heard the commercial — fire the
+    // welcome-back call before any per-pitch or PA work for this new half.
+    const crossedHalfInning =
+      priorPlayHalf !== null &&
+      (priorPlayHalf !== about.halfInning || priorPlayInning !== about.inning);
+    if (crossedHalfInning && pipeline.onHalfInningResume) {
+      await pipeline.onHalfInningResume(slim);
+    }
 
     if (PER_PITCH && pipeline.onPitchEvent) {
       // Batter intro fires BEFORE pitches so the listener hears "Steer steps
       // in, 1-for-2..." while the batter walks up. No-op if the batter hasn't
       // changed since the last play; the intro also advances lastBatterId so
-      // the PA-result onGumbo below doesn't double-announce.
-      if (pipeline.onNewBatter) {
+      // the PA-result onGumbo below doesn't double-announce. SKIPPED for the
+      // mid-PA cold-open iteration — the batter is already at the plate.
+      if (pipeline.onNewBatter && !isMidPaColdOpen) {
         await pipeline.onNewBatter(slim);
         await new Promise((r) => setTimeout(r, perPitchSleepMs));
+      } else if (isMidPaColdOpen && pipeline.acknowledgeBatter) {
+        // Don't intro a batter who is already at the plate — but advance
+        // lastBatterId so the PA-result call doesn't re-introduce him.
+        pipeline.acknowledgeBatter(slim);
       }
       const events = allPlays[i].playEvents || [];
+      const eventStart = isMidPaColdOpen ? startPitchEventIndex : 0;
       // The terminating pitch's PA-level result call still runs through
       // onGumbo (below); onPitchEvent itself returns early for "in play" so we
-      // can iterate the entire event list without manually filtering.
-      for (let j = 0; j < events.length; j++) {
+      // can iterate the entire event list without manually filtering. The
+      // `last_play_first_pitch_only` flag short-circuits after the first
+      // emitted per-pitch call so the demo can end mid-AB.
+      let pitchesEmitted = 0;
+      for (let j = eventStart; j < events.length; j++) {
         if (!events[j]?.isPitch) continue;
         await pipeline.onPitchEvent(slim, j);
+        pitchesEmitted++;
         await new Promise((r) => setTimeout(r, perPitchSleepMs));
+        if (isLastPlay && lastPlayFirstPitchOnly && pitchesEmitted >= 1) break;
       }
     }
 
-    await pipeline.onGumbo(slim);
+    // Skip the PA-result call on the final play when the demo is configured
+    // to fade after one pitch — otherwise the GIDP/grounder/etc. would still
+    // get a full call and the demo wouldn't actually end early.
+    if (isLastPlay && lastPlayFirstPitchOnly) {
+      console.log(`[scenario:${sc.name}] last_play_first_pitch_only — skipping PA wrap for play ${i}`);
+    } else {
+      await pipeline.onGumbo(slim);
+    }
+    priorPlayHalf = about.halfInning;
+    priorPlayInning = about.inning;
     await new Promise((r) => setTimeout(r, sleepMs));
+  }
+  // Ping the server so the frontend can show a "demo complete" overlay
+  // instead of sitting on the last state forever.
+  const completeUrl = voiceUrl.replace("/generate", "/demo_complete");
+  try {
+    await fetch(completeUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenario: sc.name }),
+    });
+  } catch (e) {
+    console.warn(`[scenario:${sc.name}] demo_complete post failed: ${String(e)}`);
   }
   console.log(`[scenario:${sc.name}] done`);
 }

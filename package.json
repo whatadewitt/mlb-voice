@@ -14,9 +14,9 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "demo": "node scripts/demo.mjs standard",
-    "demo:homer": "node scripts/demo.mjs homer",
-    "demo:ads": "node scripts/demo.mjs ads",
+    "demo": "SCRIPT_MODEL=gpt-4o-mini SSE_DELAY=0 VOICE_URL=http://127.0.0.1:5025/generate PER_PITCH=1 PER_PITCH_SLEEP_MS=800 node scripts/demo.mjs standard",
+    "demo:homer": "SCRIPT_MODEL=gpt-4o-mini SSE_DELAY=0 VOICE_URL=http://127.0.0.1:5025/generate PER_PITCH=1 PER_PITCH_SLEEP_MS=2000 node scripts/demo.mjs homer",
+    "demo:ads": "SCRIPT_MODEL=gpt-4o-mini SSE_DELAY=0 VOICE_URL=http://127.0.0.1:5025/generate PER_PITCH=1 PER_PITCH_SLEEP_MS=800 node scripts/demo.mjs ads",
     "hydrate": "GAME=Dummy node game.js",
     "play:SDatTOR": "GAME=SDatTOR node game.js",
     "play:ATLatWAS": "GAME=ATLatWAS node game.js",

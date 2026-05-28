@@ -18,7 +18,9 @@ export class AdLibrary {
   }
 
   pickNext() {
-    const files = this.listDir(this.adsDir).filter((f) => f.endsWith(".wav"));
+    // .mp3 ads are converted to .wav on the server in /enqueue_ad before
+    // the segmenter sees them, so either extension is fine here.
+    const files = this.listDir(this.adsDir).filter((f) => /\.(wav|mp3)$/i.test(f));
     if (!files.length) return null;
     const candidates = files.filter((f) => !this.recent.includes(f));
     const pool = candidates.length ? candidates : files;

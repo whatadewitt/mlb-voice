@@ -1,21 +1,25 @@
 name: standard_game
 title: "Standard mid-inning play-by-play"
 description: |
-  Smoke fixture. Walks 5 plays from a saved GUMBO sample to verify the
-  scenario plumbing (loader → runner → pipeline → TTS). User-curated
-  source games replace this in Week 3.
+  MIA @ TOR (game pk 822809), 2026-05-27. Cold-opens on Vladimir Guerrero
+  Jr. stepping in to lead off the bottom of the 4th — Marlins lead 1-0,
+  Eury Pérez on the mound. Vlad slaps a single to left, then Varsho flies
+  out to left. Demo ends after the Varsho flyout.
 
 source:
-  game_json_fixture: SDatTOR.json
-  start_play_index: 5
-  stop_after_plays: 5
+  game_json_fixture: MIAatTOR.json
+  start_play_index: 28
+  stop_after_plays: 2
   speed: 1.0
 
 bootstrap:
-  game_summary: "Mid-game; nothing yet."
+  game_summary: "Bottom 4 in Toronto, Marlins lead 1-0. Eury Pérez has cruised so far; Blue Jays trying to answer."
   pre_active_threads: []
 
 demo:
-  expect_classification: routine
-  what_to_listen_for: "No scoreboard re-reading. Threads ignored mostly."
-  expected_runtime_seconds: 90
+  expect_classification: notable
+  what_to_listen_for: |
+    1. Vlad steps in — booth notes "1-0 Marlins, looking to put one on for the Jays."
+    2. Play 28: Vlad singles to left. Energy spike on the contact, runner on first.
+    3. Play 29: Varsho flies out to left — one away. Demo ends here.
+    4. Color analyst on routine balls/strikes should alternate (speak / silent / speak / silent).

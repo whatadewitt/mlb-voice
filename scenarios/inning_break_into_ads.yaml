@@ -1,20 +1,30 @@
 name: inning_break_into_ads
 title: "Inning end → ad → next inning"
 description: |
-  Demos the half-inning ad flow. Walks past a half-inning boundary so the
-  AdLibrary trigger fires and a sponsored break plays before the next
-  half resumes.
+  CIN @ NYM (game pk 823624), 2026-05-26. Cold-open mid-Vientos AB with
+  the count at 3-1, one pitch from full. Vientos takes a called strike
+  to run it full, then grounds into an inning-ending double play. The
+  PA-result call hands off to a commercial; the beef plaque ad plays in
+  full; welcome-back leads into top 7.
 
 source:
-  game_json_fixture: SDatTOR.json
-  start_play_index: 30
-  stop_after_plays: 6
+  game_json_fixture: CINatNYM.json
+  start_play_index: 51
+  start_pitch_event_index: 7
+  stop_after_plays: 2
+  last_play_first_pitch_only: true
   speed: 1.0
 
 bootstrap:
-  game_summary: "Tied at 3 in the middle innings."
+  game_summary: "Bottom 6, CIN up 6-2 after Soto's two-run homer earlier this inning. Ewing on first, one out, Vientos at the plate ahead 3-1."
   pre_active_threads: []
 
 demo:
   expect_classification: notable
-  what_to_listen_for: "Ad fires after the third out; broadcast resumes top of next half-inning."
+  what_to_listen_for: |
+    1. Cold-open: NO batter intro (Vientos is already in the box). First per-pitch call is the 3-1 → 3-2 strike.
+    2. Full-count pitch: Vientos grounds into a 4-6-3 double play, inning over.
+    3. PA-result call MUST tag out to commercials ("back after a word from our sponsor").
+    4. Beef plaque ad plays IN FULL — no next-play audio leaks in.
+    5. Welcome-back: "Back live, top 7, Reds up 6-2" — uses team NAMES, never "C-I-N" / "N-Y-M".
+    6. Sal Stewart introduced, first pitch of his at-bat plays, then demo ends with the overlay.

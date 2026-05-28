@@ -1,20 +1,21 @@
 name: go_ahead_homer
 title: "Go-Ahead Home Run"
 description: |
-  Late-and-close, runner on, trailing team takes the lead. Phase-1
-  placeholder against the existing fixture; user replaces source in Week 3
-  with a curated GUMBO clip that actually contains the go-ahead HR.
+  Cold-open on Dylan Crews stepping in (bottom 2, tied 3-3 against ATL).
+  He takes Strider deep on the next pitch to flip the score to 4-3. Demo
+  walks just the Crews PA + one follow-up batter — no extended buildup,
+  the listener arrives at the moment and the call has to carry it.
 
 source:
-  game_json_fixture: SDatTOR.json
-  start_play_index: 50
-  stop_after_plays: 4
+  game_json_fixture: ATLatWAS.json
+  start_play_index: 19
+  stop_after_plays: 2
   speed: 1.0
 
 bootstrap:
-  game_summary: "Bottom 8, trailing 4-3, runner on, full-count."
-  pre_active_threads: [late_and_close, risp_jam]
+  game_summary: "Bottom 2, tied 3-3. Strider on the mound, Crews stepping in."
+  pre_active_threads: []
 
 demo:
   expect_classification: holy_shit
-  what_to_listen_for: "Sustained call, S2 disbelief, exit velocity surfaced"
+  what_to_listen_for: "Energy must spike ON the HR call, not after. S2 disbelief immediately. Follow-up batter call should naturally acknowledge the 4-3 lead change."

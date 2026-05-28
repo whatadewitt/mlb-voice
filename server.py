@@ -406,7 +406,14 @@ def hls_segmenter_loop():
     while not _shutdown.is_set():
         try:
             if not pending_audio:
-                files = sorted(f for f in os.listdir(QUEUE_DIR) if f.endswith(".wav"))
+                # Sort by mtime so files are processed in the order they were
+                # written. Alphabetical sort here was a foot-gun: ad files
+                # ("ad-...") sort BEFORE play files ("play-...") lexically, so
+                # an ad enqueued while trailing PA-result WAVs were still in
+                # the queue would jump the line and play out of order — the
+                # listener would hear the ad before the end of the call.
+                candidates = [f for f in os.listdir(QUEUE_DIR) if f.endswith(".wav")]
+                files = sorted(candidates, key=lambda f: os.path.getmtime(os.path.join(QUEUE_DIR, f)))
                 if files:
                     wav_path = os.path.join(QUEUE_DIR, files[0])
                     wav_size = os.path.getsize(wav_path)
@@ -488,6 +495,23 @@ def _publish_state(state: dict) -> None:
         _last_state = state
         _state_version += 1
         _state_cond.notify_all()
+
+@app.route("/demo_complete", methods=["POST"])
+def post_demo_complete():
+    """Runner posts this when the scenario loop finishes so the frontend can
+    show a 'demo complete' banner. The payload is published as a regular
+    SSE state event with an added `_demo_complete: true` marker that
+    web/app.js detects and surfaces."""
+    body = request.get_json(force=True, silent=True) or {}
+    # Carry over whatever the last state was so the UI doesn't reset; just
+    # add the marker.
+    with _state_cond:
+        merged = dict(_last_state)
+    merged.update(body)
+    merged["_demo_complete"] = True
+    log.info("demo_complete posted")
+    _publish_state(merged)
+    return jsonify({"ok": True})
 
 @app.route("/state", methods=["POST"])
 def post_state():
@@ -586,13 +610,13 @@ def generate():
         total_bytes = sum(os.path.getsize(p) for p in result if os.path.exists(p))
         total_dur = sum(_wav_seconds(p) for p in result)
         log.info(f"/generate ok lines={len(result)} total_bytes={total_bytes} total_dur={total_dur:.2f}s elapsed={time.time()-t0:.2f}s")
-        return jsonify({"status": "queued", "files": result, "lines": len(result)})
+        return jsonify({"status": "queued", "files": result, "lines": len(result), "total_dur": round(total_dur, 3)})
 
     os.rename(tmp_path, out_path)
     size = os.path.getsize(out_path)
     dur = _wav_seconds(out_path)
     log.info(f"/generate ok wav={out_path} bytes={size} dur={dur:.2f}s elapsed={time.time()-t0:.2f}s")
-    return jsonify({"status": "queued", "file": out_path})
+    return jsonify({"status": "queued", "file": out_path, "total_dur": round(dur, 3)})
 
 @app.route("/enqueue_ad", methods=["POST"])
 def enqueue_ad():
@@ -603,8 +627,23 @@ def enqueue_ad():
         return jsonify({"error": f"ad not found: {filename}"}), 404
     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
     dst = os.path.join(QUEUE_DIR, f"ad-{ts}.wav")
-    shutil.copyfile(src, dst)
-    return jsonify({"status": "queued", "file": dst})
+    # The HLS segmenter only picks up .wav files from QUEUE_DIR. .mp3 ads
+    # are transcoded to 24kHz mono PCM via ffmpeg so the segmenter can hand
+    # them off to the downstream aac encoder unchanged.
+    if filename.lower().endswith(".mp3"):
+        try:
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-i", src, "-ar", "24000", "-ac", "1", dst,
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            log.exception(f"/enqueue_ad ffmpeg mp3->wav failed for {filename}")
+            return jsonify({"error": f"ad transcode failed: {filename}"}), 500
+    else:
+        shutil.copyfile(src, dst)
+    dur = _wav_seconds(dst)
+    log.info(f"/enqueue_ad ok ad={filename} dst={dst} dur={dur:.2f}s")
+    return jsonify({"status": "queued", "file": dst, "total_dur": round(dur, 3)})
 
 def _mlbam_to_fangraphs(mlbam_id):
     """Cross-walk MLBAM player ID to Fangraphs ID via pybaseball lookup table.
