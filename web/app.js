@@ -25,12 +25,34 @@
   if (nowPlayingNameEl) nowPlayingNameEl.textContent = GAME.announcers;
 
   // ── HLS attach ────────────────────────────────────────────────
+  // Retry config is generous on purpose: the page often loads BEFORE the
+  // demo runner has called /start_hls, so the very first manifest fetch
+  // hits a 404. Default hls.js retries once and gives up — silent demo.
+  // With these settings it'll patiently poll until the playlist appears.
   if (window.Hls && window.Hls.isSupported()) {
-    const hls = new window.Hls({ enableWorker: true });
+    const hls = new window.Hls({
+      enableWorker: true,
+      manifestLoadingMaxRetry: 20,
+      manifestLoadingRetryDelay: 1000,
+      manifestLoadingMaxRetryTimeout: 30000,
+      levelLoadingMaxRetry: 20,
+      levelLoadingRetryDelay: 1000,
+      levelLoadingMaxRetryTimeout: 30000,
+    });
     hls.loadSource(HLS_URL);
     hls.attachMedia(audio);
     hls.on(window.Hls.Events.ERROR, (_, data) => {
-      if (data.fatal) console.warn('HLS fatal error', data);
+      if (!data.fatal) return;
+      console.warn('HLS fatal error, attempting recovery', data);
+      // For manifest/network fatals, re-trigger loadSource so we don't
+      // permanently give up if the server was slow to start.
+      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+        setTimeout(() => {
+          try { hls.loadSource(HLS_URL); hls.startLoad(); } catch (e) {}
+        }, 1500);
+      } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+        try { hls.recoverMediaError(); } catch (e) {}
+      }
     });
   } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
     audio.src = HLS_URL;
@@ -178,8 +200,17 @@
     venueEl.textContent = venue;
   }
 
+  const demoCompleteEl = document.querySelector('[data-sse-demo-complete]');
+  function showDemoComplete() {
+    if (!demoCompleteEl) return;
+    demoCompleteEl.hidden = false;
+    // Defer the data-visible flip so the CSS transition runs.
+    requestAnimationFrame(() => demoCompleteEl.setAttribute('data-visible', 'true'));
+  }
+
   function applyState(s) {
     if (!s || typeof s !== 'object') return;
+    if (s._demo_complete) showDemoComplete();
     if ('balls' in s) setPips('balls', s.balls);
     if ('strikes' in s) setPips('strikes', s.strikes);
     if ('outs' in s) setPips('outs', s.outs);
